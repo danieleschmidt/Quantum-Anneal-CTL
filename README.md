@@ -42,7 +42,7 @@ Quantum-Anneal-CTL provides a framework for solving complex HVAC optimization pr
 ### Quick Install
 
 ```bash
-git clone https://github.com/yourusername/Quantum-Anneal-CTL
+git clone https://github.com/danieleschmidt/Quantum-Anneal-CTL
 cd Quantum-Anneal-CTL
 
 # Install dependencies
@@ -59,7 +59,7 @@ python -m quantum_ctl.test_connection
 ### Docker Deployment
 
 ```bash
-docker pull ghcr.io/yourusername/quantum-anneal-ctl:latest
+docker pull ghcr.io/danieleschmidt/quantum-anneal-ctl:latest
 docker run -e DWAVE_API_TOKEN=$DWAVE_API_TOKEN quantum-anneal-ctl
 ```
 
