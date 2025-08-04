@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from .controller import HVACController, OptimizationConfig, ControlObjectives
 from ..models.building import Building, BuildingState
+from ..utils.performance import get_resource_manager
 
 
 @dataclass
@@ -41,10 +42,6 @@ class MicroGridController:
         individual_configs: Optional[List[OptimizationConfig]] = None
     ):
         self.buildings = buildings
-        self.solar_capacity_kw = solar_capacity_kw
-        self.battery_capacity_kwh = battery_capacity_kwh  
-        self.grid_connection_limit_kw = grid_connection_limit_kw
-        self.enable_peer_trading = enable_peer_trading
         
         self.config = config or MicroGridConfig(
             solar_capacity_kw=solar_capacity_kw,
@@ -52,6 +49,12 @@ class MicroGridController:
             grid_connection_limit_kw=grid_connection_limit_kw,
             enable_peer_trading=enable_peer_trading
         )
+        
+        # Use config values (allows config to override individual parameters)
+        self.solar_capacity_kw = self.config.solar_capacity_kw
+        self.battery_capacity_kwh = self.config.battery_capacity_kwh  
+        self.grid_connection_limit_kw = self.config.grid_connection_limit_kw
+        self.enable_peer_trading = self.config.enable_peer_trading
         
         self.logger = logging.getLogger(__name__)
         

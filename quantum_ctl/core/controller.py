@@ -18,6 +18,10 @@ from ..utils.error_handling import (
     OptimizationError, ErrorCategory, ErrorSeverity
 )
 from ..utils.monitoring import HealthMonitor, CircuitBreaker, RetryManager
+from ..utils.safety import SafetyMonitor, SafetyLimits
+from ..utils.performance import (
+    get_resource_manager, performance_monitor, cached_matrix_operation
+)
 
 
 @dataclass
@@ -88,6 +92,9 @@ class HVACController:
         self._circuit_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=120)
         self._retry_manager = RetryManager(max_retries=2, base_delay=1.0)
         
+        # Safety monitoring
+        self._safety_monitor = SafetyMonitor(building, SafetyLimits())
+        
         # Start health monitoring
         self._health_monitor.start_monitoring()
         
@@ -102,6 +109,7 @@ class HVACController:
         self.objectives = ControlObjectives(**objectives)
         self.logger.info(f"Updated objectives: {self.objectives}")
     
+    @performance_monitor
     @async_error_handler(category=ErrorCategory.OPTIMIZATION, severity=ErrorSeverity.HIGH)
     async def optimize(
         self,
@@ -124,6 +132,12 @@ class HVACController:
         start_time = datetime.now()
         
         try:
+            # Safety check first
+            safety_level = self._safety_monitor.check_safety(current_state)
+            if safety_level.value in ['critical', 'emergency']:
+                self.logger.error(f"Safety violation detected: {safety_level}")
+                return await self._emergency_control(current_state)
+            
             # Validate inputs
             validate_state(current_state, self.building)
             validate_forecast(weather_forecast, self._get_control_steps())
@@ -308,7 +322,47 @@ class HVACController:
         # Emergency: maintain current setpoints
         n_controls = self.building.get_control_dimension()
         n_steps = self._get_control_steps()
-        return np.tile(current_state.control_setpoints, n_steps)
+        return np.tile(current_state.control_setpoints, (n_steps, 1)).flatten()
+    
+    async def _emergency_control(self, current_state: BuildingState) -> np.ndarray:
+        """Emergency control for safety violations."""
+        self.logger.critical("EMERGENCY CONTROL ACTIVATED")
+        
+        # Get safety violations
+        violations = self._safety_monitor.safety_violations
+        
+        n_controls = self.building.get_control_dimension()
+        n_steps = self._get_control_steps()
+        
+        # Emergency setpoints - conservative control
+        emergency_setpoints = []
+        
+        for i in range(n_controls):
+            if i < len(current_state.zone_temperatures):
+                temp = current_state.zone_temperatures[i]
+                
+                # Conservative temperature control
+                if temp < 18.0:
+                    setpoint = 0.8  # High heating
+                elif temp > 28.0:
+                    setpoint = 0.2  # High cooling
+                else:
+                    setpoint = 0.5  # Moderate control
+            else:
+                setpoint = 0.5  # Default moderate control
+            
+            emergency_setpoints.append(setpoint)
+        
+        emergency_schedule = np.tile(emergency_setpoints, (n_steps, 1)).flatten()
+        
+        # Log emergency action
+        self.logger.critical(
+            f"Emergency control schedule applied. "
+            f"Violations: {violations}, "
+            f"Emergency setpoints: {emergency_setpoints}"
+        )
+        
+        return emergency_schedule
     
     def apply_schedule(self, control_schedule: np.ndarray) -> None:
         """Apply the first step of the control schedule to the building."""
@@ -320,10 +374,41 @@ class HVACController:
         n_controls = self.building.get_control_dimension()
         current_control = control_schedule[:n_controls]
         
-        # Apply to building (this would interface with actual BMS)
-        self.building.apply_control(current_control)
+        # Safety validation of control commands
+        if self._validate_control_safety(current_control):
+            # Apply to building (this would interface with actual BMS)
+            self.building.apply_control(current_control)
+            self.logger.info(f"Applied control: {current_control}")
+            
+            # Record performance metrics
+            self._health_monitor.record_optimization(
+                success=True, 
+                solve_time=0.0,  # Would be actual solve time
+                energy=0.0  # Would be estimated energy
+            )
+        else:
+            self.logger.error(f"Control commands failed safety validation: {current_control}")
+            # Apply safe fallback control
+            safe_control = np.full(n_controls, 0.5)  # Conservative middle values
+            self.building.apply_control(safe_control)
+            self.logger.warning(f"Applied safe fallback control: {safe_control}")
+    
+    def _validate_control_safety(self, control_commands: np.ndarray) -> bool:
+        """Validate control commands for safety."""
+        # Check for reasonable control values (0-1 range)
+        if np.any(control_commands < 0) or np.any(control_commands > 1):
+            self.logger.error("Control commands outside valid range [0,1]")
+            return False
         
-        self.logger.info(f"Applied control: {current_control}")
+        # Check for extreme control changes
+        if self._control_history:
+            last_control = self._control_history[-1][:len(control_commands)]
+            max_change = np.max(np.abs(control_commands - last_control))
+            if max_change > 0.5:  # No more than 50% change per step
+                self.logger.warning(f"Large control change detected: {max_change}")
+                return False
+        
+        return True
     
     async def run_control_loop(
         self,
@@ -356,11 +441,23 @@ class HVACController:
     
     def get_status(self) -> Dict[str, Any]:
         """Get controller status and metrics."""
+        health_status = self._health_monitor.get_health_status()
+        resource_manager = get_resource_manager()
+        performance_summary = resource_manager.get_performance_summary()
+        
         return {
             'building_id': self.building.building_id,
             'last_optimization': self._last_optimization,
             'objectives': self.objectives,
             'config': self.config,
             'history_length': len(self._control_history),
-            'quantum_solver_status': self.quantum_solver.get_status()
+            'quantum_solver_status': self.quantum_solver.get_status(),
+            'safety_status': {
+                'level': self._safety_monitor.current_safety_level.value,
+                'violations': self._safety_monitor.safety_violations,
+                'emergency_active': self._safety_monitor.emergency_control_active
+            },
+            'health_status': health_status,
+            'circuit_breaker_status': self._circuit_breaker.get_state(),
+            'performance_metrics': performance_summary
         }
