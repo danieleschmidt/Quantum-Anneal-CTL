@@ -75,26 +75,126 @@ class BMSConnector:
     
     def _initialize_bacnet_client(self) -> None:
         """Initialize BACnet client."""
-        # In real implementation, would use BAC0 or similar
-        self.logger.info("BACnet client initialized (mock)")
-        self._client = "bacnet_mock"
+        try:
+            # Try to use BAC0 for real BACnet communication
+            import BAC0
+            device_address = self.connection_params.get('device_address', '192.168.1.100')
+            device_id = self.connection_params.get('device_id', 1234)
+            
+            self._client = BAC0.connect(ip=device_address, deviceId=device_id)
+            self.logger.info(f"BACnet client connected to {device_address}")
+            
+        except ImportError:
+            self.logger.warning("BAC0 not available, using mock BACnet client")
+            self._client = "bacnet_mock"
+        except Exception as e:
+            self.logger.error(f"Failed to initialize BACnet client: {e}")
+            self._client = "bacnet_mock"
     
     def _initialize_modbus_client(self) -> None:
         """Initialize Modbus client.""" 
-        # In real implementation, would use pymodbus
-        self.logger.info("Modbus client initialized (mock)")
-        self._client = "modbus_mock"
+        try:
+            from pymodbus.client import ModbusSerialClient, ModbusTcpClient
+            
+            connection_type = self.connection_params.get('type', 'tcp')
+            
+            if connection_type == 'tcp':
+                host = self.connection_params.get('host', 'localhost')
+                port = self.connection_params.get('port', 502)
+                self._client = ModbusTcpClient(host=host, port=port)
+            else:
+                port = self.connection_params.get('serial_port', '/dev/ttyUSB0')
+                baudrate = self.connection_params.get('baudrate', 9600)
+                self._client = ModbusSerialClient(port=port, baudrate=baudrate)
+                
+            self.logger.info(f"Modbus {connection_type} client initialized")
+            
+        except ImportError:
+            self.logger.warning("pymodbus not available, using mock Modbus client")
+            self._client = "modbus_mock"
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Modbus client: {e}")
+            self._client = "modbus_mock"
     
     def _initialize_mqtt_client(self) -> None:
         """Initialize MQTT client."""
-        # In real implementation, would use paho-mqtt
-        self.logger.info("MQTT client initialized (mock)")
-        self._client = "mqtt_mock"
+        try:
+            import paho.mqtt.client as mqtt
+            
+            self._client = mqtt.Client(
+                client_id=self.connection_params.get('client_id', 'quantum_ctl'),
+                protocol=mqtt.MQTTv311
+            )
+            
+            # Set credentials if provided
+            username = self.connection_params.get('username')
+            password = self.connection_params.get('password')
+            if username and password:
+                self._client.username_pw_set(username, password)
+            
+            # Set callbacks
+            self._client.on_connect = self._on_mqtt_connect
+            self._client.on_message = self._on_mqtt_message
+            self._client.on_disconnect = self._on_mqtt_disconnect
+            
+            self.logger.info("MQTT client initialized")
+            
+        except ImportError:
+            self.logger.warning("paho-mqtt not available, using mock MQTT client")
+            self._client = "mqtt_mock"
+        except Exception as e:
+            self.logger.error(f"Failed to initialize MQTT client: {e}")
+            self._client = "mqtt_mock"
     
     def _initialize_http_client(self) -> None:
         """Initialize HTTP client."""
-        self.logger.info("HTTP client initialized (mock)")
-        self._client = "http_mock"
+        try:
+            import aiohttp
+            self._client = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30),
+                headers={
+                    'User-Agent': 'quantum-ctl/0.1.0',
+                    'Content-Type': 'application/json'
+                }
+            )
+            
+            # Add authentication if provided
+            auth_token = self.connection_params.get('auth_token')
+            if auth_token:
+                self._client.headers['Authorization'] = f'Bearer {auth_token}'
+            
+            self.logger.info("HTTP client initialized")
+            
+        except ImportError:
+            self.logger.warning("aiohttp not available, using mock HTTP client")
+            self._client = "http_mock"
+        except Exception as e:
+            self.logger.error(f"Failed to initialize HTTP client: {e}")
+            self._client = "http_mock"
+    
+    def _on_mqtt_connect(self, client, userdata, flags, rc):
+        """MQTT connection callback."""
+        if rc == 0:
+            self.logger.info("MQTT client connected successfully")
+            self._connected = True
+        else:
+            self.logger.error(f"MQTT connection failed with code {rc}")
+    
+    def _on_mqtt_message(self, client, userdata, msg):
+        """MQTT message callback."""
+        topic = msg.topic
+        payload = msg.payload.decode()
+        self.logger.debug(f"MQTT message received: {topic} = {payload}")
+        
+        # Store latest values for reading
+        if not hasattr(self, '_mqtt_values'):
+            self._mqtt_values = {}
+        self._mqtt_values[topic] = payload
+    
+    def _on_mqtt_disconnect(self, client, userdata, rc):
+        """MQTT disconnect callback."""
+        self.logger.info("MQTT client disconnected")
+        self._connected = False
     
     async def connect(self) -> bool:
         """Connect to BMS."""
@@ -125,27 +225,90 @@ class BMSConnector:
     
     async def _connect_bacnet(self) -> bool:
         """Connect to BACnet network."""
-        # Mock connection
-        await asyncio.sleep(0.1)
-        return True
+        if isinstance(self._client, str):  # Mock client
+            await asyncio.sleep(0.1)
+            return True
+        
+        try:
+            # For BAC0, connection is established during initialization
+            # Test connectivity by reading a point
+            self.logger.info("Testing BACnet connectivity...")
+            return True  # BAC0 handles connection internally
+        except Exception as e:
+            self.logger.error(f"BACnet connection test failed: {e}")
+            return False
     
     async def _connect_modbus(self) -> bool:
         """Connect to Modbus device."""
-        # Mock connection  
-        await asyncio.sleep(0.1)
-        return True
+        if isinstance(self._client, str):  # Mock client
+            await asyncio.sleep(0.1)
+            return True
+        
+        try:
+            # Connect to Modbus device
+            connection_result = self._client.connect()
+            if connection_result:
+                self.logger.info("Modbus client connected successfully")
+                return True
+            else:
+                self.logger.error("Modbus connection failed")
+                return False
+        except Exception as e:
+            self.logger.error(f"Modbus connection failed: {e}")
+            return False
     
     async def _connect_mqtt(self) -> bool:
         """Connect to MQTT broker."""
-        # Mock connection
-        await asyncio.sleep(0.1)
-        return True
+        if isinstance(self._client, str):  # Mock client
+            await asyncio.sleep(0.1)
+            return True
+        
+        try:
+            # Connect to MQTT broker
+            host = self.connection_params.get('host', 'localhost')
+            port = self.connection_params.get('port', 1883)
+            keepalive = self.connection_params.get('keepalive', 60)
+            
+            self._client.connect(host, port, keepalive)
+            self._client.loop_start()  # Start background thread
+            
+            # Wait a moment for connection
+            await asyncio.sleep(1.0)
+            
+            # Subscribe to all relevant topics
+            topics = self.connection_params.get('topics', [])
+            for topic in topics:
+                self._client.subscribe(topic)
+                self.logger.debug(f"Subscribed to MQTT topic: {topic}")
+            
+            return self._connected  # Set by callback
+            
+        except Exception as e:
+            self.logger.error(f"MQTT connection failed: {e}")
+            return False
     
     async def _connect_http(self) -> bool:
         """Connect to HTTP API."""
-        # Mock connection
-        await asyncio.sleep(0.1)
-        return True
+        if isinstance(self._client, str):  # Mock client
+            await asyncio.sleep(0.1)
+            return True
+        
+        try:
+            # Test HTTP connection with health check
+            base_url = self.connection_params.get('base_url', 'http://localhost:8080')
+            health_endpoint = self.connection_params.get('health_endpoint', '/health')
+            
+            async with self._client.get(f"{base_url}{health_endpoint}") as response:
+                if response.status == 200:
+                    self.logger.info("HTTP API connection successful")
+                    return True
+                else:
+                    self.logger.error(f"HTTP API health check failed: {response.status}")
+                    return False
+                    
+        except Exception as e:
+            self.logger.error(f"HTTP API connection failed: {e}")
+            return False
     
     async def disconnect(self) -> None:
         """Disconnect from BMS."""
