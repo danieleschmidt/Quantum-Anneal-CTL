@@ -44,6 +44,7 @@ dependencies = [
     "cryptography>=40.0.0",
     "pyyaml>=6.0",
     "click>=8.0.0",
+    "aiohttp>=3.8.0",
 ]
 
 [project.optional-dependencies]
@@ -67,6 +68,10 @@ simulation = [
     "seaborn>=0.12.0",
     "jupyter>=1.0.0",
     "plotly>=5.15.0",
+]
+bms = [
+    "BAC0>=22.9.21",
+    "pymodbus>=3.1.0",
 ]
 
 [project.scripts]

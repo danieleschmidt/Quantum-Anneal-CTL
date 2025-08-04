@@ -33,11 +33,25 @@ class MicroGridController:
     def __init__(
         self,
         buildings: List[Building],
+        solar_capacity_kw: float = 0.0,
+        battery_capacity_kwh: float = 0.0,
+        grid_connection_limit_kw: float = 1000.0,
+        enable_peer_trading: bool = False,
         config: MicroGridConfig = None,
         individual_configs: Optional[List[OptimizationConfig]] = None
     ):
         self.buildings = buildings
-        self.config = config or MicroGridConfig()
+        self.solar_capacity_kw = solar_capacity_kw
+        self.battery_capacity_kwh = battery_capacity_kwh  
+        self.grid_connection_limit_kw = grid_connection_limit_kw
+        self.enable_peer_trading = enable_peer_trading
+        
+        self.config = config or MicroGridConfig(
+            solar_capacity_kw=solar_capacity_kw,
+            battery_capacity_kwh=battery_capacity_kwh,
+            grid_connection_limit_kw=grid_connection_limit_kw,
+            enable_peer_trading=enable_peer_trading
+        )
         
         self.logger = logging.getLogger(__name__)
         
@@ -117,6 +131,109 @@ class MicroGridController:
             'optimization_timestamp': asyncio.get_event_loop().time()
         }
     
+    async def optimize_quantum(
+        self,
+        building_states: List[BuildingState],
+        weather_forecast: np.ndarray,
+        energy_prices: np.ndarray,
+        solar_generation: np.ndarray,
+        config: OptimizationConfig,
+        objectives: ControlObjectives
+    ) -> Dict[str, Any]:
+        """
+        Quantum optimization of entire microgrid.
+        
+        Args:
+            building_states: Current states of all buildings
+            weather_forecast: Weather predictions
+            energy_prices: Energy price forecast
+            solar_generation: Solar generation forecast
+            config: Optimization configuration
+            objectives: Multi-objective weights
+            
+        Returns:
+            Comprehensive optimization results
+        """
+        self.logger.info(f"Starting quantum microgrid optimization")
+        
+        # Update individual controller configurations
+        for controller in self.controllers:
+            controller.config = config
+            controller.objectives = objectives
+        
+        # Optimize each building with microgrid awareness
+        hvac_schedules = []
+        building_demands = []
+        
+        for i, (controller, state) in enumerate(zip(self.controllers, building_states)):
+            try:
+                # Individual building optimization
+                schedule = await controller.optimize(
+                    state, weather_forecast, energy_prices
+                )
+                hvac_schedules.append(schedule)
+                
+                # Estimate building energy demand
+                n_zones = len(self.buildings[i].zones)
+                n_steps = len(schedule) // n_zones
+                schedule_2d = schedule.reshape((n_steps, n_zones))
+                
+                # Calculate power demand for each time step
+                zone_powers = [zone.max_heating_power + zone.max_cooling_power 
+                              for zone in self.buildings[i].zones]
+                demand_profile = np.array([
+                    np.sum(step * zone_powers) for step in schedule_2d
+                ])
+                building_demands.append(demand_profile)
+                
+            except Exception as e:
+                self.logger.error(f"Building {i} quantum optimization failed: {e}")
+                # Fallback schedule
+                n_controls = self.buildings[i].get_control_dimension()
+                n_steps = config.prediction_horizon * 4  # 15-min intervals
+                fallback = np.full(n_steps * n_controls, 0.5)
+                hvac_schedules.append(fallback)
+                
+                # Default demand profile
+                avg_power = np.mean([zone.max_heating_power for zone in self.buildings[i].zones])
+                building_demands.append(np.full(n_steps, avg_power))
+        
+        # Aggregate building demand
+        total_demand = np.sum(building_demands, axis=0)
+        
+        # Optimize energy storage and grid interaction
+        battery_schedule = self._optimize_battery_schedule(
+            total_demand, energy_prices, solar_generation, objectives
+        )
+        
+        # Calculate grid interaction
+        net_demand = total_demand - solar_generation
+        battery_contribution = np.array(battery_schedule)
+        grid_interaction = np.maximum(0, net_demand + battery_contribution)
+        
+        # Peer-to-peer trading (simplified)
+        peer_trading = {}
+        if self.enable_peer_trading:
+            peer_trading = self._optimize_peer_trading(
+                building_demands, solar_generation, energy_prices
+            )
+        
+        return {
+            'hvac_schedules': hvac_schedules,
+            'battery_schedule': battery_schedule,
+            'grid_interaction': grid_interaction,
+            'peer_trading': peer_trading,
+            'building_demands': building_demands,
+            'total_demand': total_demand,
+            'solar_utilization': np.minimum(solar_generation, total_demand),
+            'energy_balance': {
+                'total_demand_kwh': np.sum(total_demand) * 0.25,  # 15-min intervals
+                'solar_generation_kwh': np.sum(solar_generation) * 0.25,
+                'grid_import_kwh': np.sum(grid_interaction) * 0.25,
+                'battery_throughput_kwh': np.sum(np.abs(battery_schedule)) * 0.25
+            }
+        }
+    
     def _optimize_energy_flows(
         self,
         demand_forecast: np.ndarray,
@@ -177,6 +294,86 @@ class MicroGridController:
             'solar_schedule': np.array(solar_schedule),
             'final_battery_soc': current_soc
         }
+    
+    def _optimize_battery_schedule(
+        self,
+        demand_profile: np.ndarray,
+        energy_prices: np.ndarray,
+        solar_generation: np.ndarray,
+        objectives: ControlObjectives
+    ) -> List[float]:
+        """Optimize battery charging/discharging schedule."""
+        
+        battery_schedule = []
+        current_soc = self.battery_soc
+        
+        # Price thresholds for battery operation
+        price_mean = np.mean(energy_prices)
+        price_std = np.std(energy_prices)
+        charge_threshold = price_mean - 0.5 * price_std
+        discharge_threshold = price_mean + 0.5 * price_std
+        
+        for t, (demand, price, solar) in enumerate(zip(demand_profile, energy_prices, solar_generation)):
+            net_demand = demand - solar
+            
+            # Battery operation decision
+            if price < charge_threshold and current_soc < 0.9 and net_demand < 0:
+                # Charge from excess solar or cheap grid power
+                max_charge_rate = self.battery_capacity_kwh * 0.25  # 25% per 15-min
+                available_excess = max(0, solar - demand)
+                charge_power = min(max_charge_rate, available_excess * objectives.energy_cost)
+                current_soc = min(1.0, current_soc + charge_power / self.battery_capacity_kwh * 0.25)
+                battery_schedule.append(charge_power)
+                
+            elif price > discharge_threshold and current_soc > 0.1 and net_demand > 0:
+                # Discharge during expensive periods
+                max_discharge_rate = self.battery_capacity_kwh * 0.25
+                available_discharge = current_soc * self.battery_capacity_kwh
+                discharge_power = min(max_discharge_rate, available_discharge, net_demand)
+                current_soc = max(0.0, current_soc - discharge_power / self.battery_capacity_kwh * 0.25)
+                battery_schedule.append(-discharge_power)
+                
+            else:
+                # No battery operation
+                battery_schedule.append(0.0)
+        
+        return battery_schedule
+    
+    def _optimize_peer_trading(
+        self,
+        building_demands: List[np.ndarray],
+        solar_generation: np.ndarray,
+        energy_prices: np.ndarray
+    ) -> Dict[str, Any]:
+        """Optimize peer-to-peer energy trading between buildings."""
+        
+        # Simplified P2P trading
+        trading_schedule = {}
+        
+        n_steps = len(solar_generation)
+        n_buildings = len(building_demands)
+        
+        for t in range(n_steps):
+            step_demands = [demands[t] for demands in building_demands]
+            available_solar = solar_generation[t]
+            
+            # Distribute solar among buildings based on demand
+            total_demand = sum(step_demands)
+            if total_demand > 0 and available_solar > 0:
+                solar_allocation = [
+                    (demand / total_demand) * min(available_solar, total_demand)
+                    for demand in step_demands
+                ]
+            else:
+                solar_allocation = [0.0] * n_buildings
+            
+            trading_schedule[f'step_{t}'] = {
+                'solar_allocation': solar_allocation,
+                'excess_solar': max(0, available_solar - total_demand),
+                'total_trading_volume': sum(solar_allocation)
+            }
+        
+        return trading_schedule
     
     async def run(self, data_source, update_interval: Optional[int] = None) -> None:
         """Run continuous micro-grid coordination."""
