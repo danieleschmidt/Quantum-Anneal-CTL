@@ -538,8 +538,8 @@ Apache License 2.0 - see [LICENSE](LICENSE) file.
 ```bibtex
 @software{quantum-anneal-ctl,
   title={Quantum-Anneal-CTL: Quantum Annealing for HVAC Control},
-  author={Your Name},
+  author={Daniel Schmidt},
   year={2025},
-  url={https://github.com/yourusername/Quantum-Anneal-CTL}
+  url={https://github.com/danieleschmidt/Quantum-Anneal-CTL}
 }
 ```
