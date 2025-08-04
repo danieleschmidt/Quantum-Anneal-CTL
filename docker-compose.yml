@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  quantum-ctl:
+    build: .
+    container_name: quantum-anneal-ctl
+    environment:
+      - DWAVE_API_TOKEN=${DWAVE_API_TOKEN:-}
+      - QUANTUM_CTL_LOG_LEVEL=INFO
+      - QUANTUM_CTL_SOLVER=classical_fallback
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    ports:
+      - "8080:8080"  # Dashboard port
+    command: ["python3", "examples/basic_optimization.py"]
+    restart: unless-stopped
+
+  dashboard:
+    build: .
+    container_name: quantum-ctl-dashboard
+    environment:
+      - QUANTUM_CTL_LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "8080:8080"
+    command: ["python3", "-m", "quantum_ctl.cli", "run-dashboard", "--port", "8080"]
+    restart: unless-stopped
+    depends_on:
+      - quantum-ctl
+
+  redis:
+    image: redis:7-alpine
+    container_name: quantum-ctl-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  influx:
+    image: influxdb:2.7-alpine
+    container_name: quantum-ctl-influx
+    environment:
+      - INFLUXDB_DB=quantum_ctl
+      - INFLUXDB_ADMIN_USER=admin
+      - INFLUXDB_ADMIN_PASSWORD=quantum123
+    ports:
+      - "8086:8086"
+    volumes:
+      - influx_data:/var/lib/influxdb2
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  influx_data:
