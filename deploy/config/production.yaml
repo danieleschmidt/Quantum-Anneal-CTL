@@ -1,0 +1,144 @@
+# Production configuration for Quantum HVAC Control System
+
+system:
+  name: "Quantum HVAC Control System"
+  version: "1.0.0"
+  environment: "production"
+  
+logging:
+  level: "INFO"
+  format: "json"
+  file: "/app/logs/quantum-hvac.log"
+  max_size: "100MB"
+  backup_count: 5
+  
+optimization:
+  prediction_horizon: 12  # hours
+  control_interval: 15    # minutes
+  solver_type: "classical_fallback"  # or "hybrid" or "qpu" if D-Wave available
+  num_reads: 100
+  annealing_time: 20     # microseconds
+  chain_strength: 1.0
+  
+  # Caching configuration
+  cache:
+    optimization_cache_size: 128
+    optimization_cache_ttl: 300  # seconds
+    matrix_cache_size: 64
+    matrix_cache_ttl: 600        # seconds
+  
+  # Performance settings
+  performance:
+    max_parallel_workers: 4
+    enable_performance_monitoring: true
+    resource_optimization_interval: 3600  # seconds
+
+safety:
+  enable_monitoring: true
+  limits:
+    min_zone_temp: 15.0     # °C
+    max_zone_temp: 35.0     # °C
+    max_humidity: 95.0      # %
+    min_humidity: 10.0      # %
+    max_power_per_zone: 25.0  # kW
+    max_temp_change_rate: 5.0  # °C/hour
+  
+  emergency_control:
+    enable: true
+    timeout: 300  # seconds
+    
+control_objectives:
+  energy_cost: 0.5
+  comfort: 0.4
+  carbon: 0.1
+
+microgrid:
+  enable: true
+  solar_capacity_kw: 200.0
+  battery_capacity_kwh: 500.0
+  grid_connection_limit_kw: 400.0
+  enable_peer_trading: true
+  coordination_interval: 300  # seconds
+  
+  # Battery optimization
+  battery:
+    charge_threshold_price: 0.15  # $/kWh
+    discharge_threshold_price: 0.20  # $/kWh
+    max_charge_rate: 0.25  # C-rate (25% capacity per hour)
+    max_discharge_rate: 0.25
+    min_soc: 0.1  # 10%
+    max_soc: 0.9  # 90%
+
+monitoring:
+  enable: true
+  health_check_interval: 60  # seconds
+  metrics_export_interval: 30  # seconds
+  
+  # Circuit breaker settings
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout: 300  # seconds
+    
+  # Retry configuration
+  retry:
+    max_retries: 3
+    base_delay: 1.0  # seconds
+    max_delay: 60.0  # seconds
+    exponential_base: 2.0
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins: ["*"]
+  rate_limit: "100/minute"
+  
+  # Authentication (in production, use proper auth)
+  auth:
+    enable: false  # Set to true and configure properly for production
+    secret_key: "your-secret-key-here"  # Change this!
+
+database:
+  # For storing historical data and configurations
+  type: "sqlite"  # or "postgresql" for production
+  url: "/app/data/quantum_hvac.db"
+  # For PostgreSQL:
+  # url: "postgresql://user:password@postgres:5432/quantum_hvac"
+  
+  # Connection pool settings
+  pool_size: 5
+  max_overflow: 10
+  
+integration:
+  # Building Management System integration
+  bms:
+    enable: false  # Enable when connecting to real BMS
+    protocol: "modbus"  # or "opcua" or "bacnet"
+    connection:
+      host: "192.168.1.100"
+      port: 502
+      timeout: 5
+      
+  # Weather data integration
+  weather:
+    enable: false  # Enable for real weather data
+    provider: "openweathermap"  # or "noaa" or custom
+    api_key: "your-api-key-here"
+    update_interval: 900  # 15 minutes
+    
+  # Energy market data
+  energy_pricing:
+    enable: false  # Enable for real-time pricing
+    provider: "iso_new_england"  # or your local ISO
+    api_key: "your-api-key-here"
+    update_interval: 300  # 5 minutes
+
+# Global feature flags
+features:
+  quantum_optimization: true
+  microgrid_coordination: true
+  safety_monitoring: true
+  performance_monitoring: true
+  real_time_control: true
+  peer_to_peer_trading: true
+  predictive_maintenance: false  # Future feature
+  machine_learning_optimization: false  # Future feature

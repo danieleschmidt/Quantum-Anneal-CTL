@@ -1,0 +1,155 @@
+version: '3.8'
+
+services:
+  quantum-hvac-controller:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: quantum-hvac-main
+    restart: unless-stopped
+    environment:
+      - PYTHONPATH=/app
+      - LOG_LEVEL=INFO
+      - OPTIMIZATION_CACHE_SIZE=128
+      - MATRIX_CACHE_SIZE=64
+      - MAX_PARALLEL_WORKERS=4
+      - PREDICTION_HORIZON=12
+      - CONTROL_INTERVAL=15
+      - SOLVER_TYPE=classical_fallback
+      - ENABLE_SAFETY_MONITORING=true
+      - ENABLE_PERFORMANCE_MONITORING=true
+    volumes:
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+      - quantum_data:/app/data
+    ports:
+      - "8000:8000"  # API port
+      - "8001:8001"  # Monitoring dashboard
+    networks:
+      - quantum-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import quantum_ctl; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  microgrid-coordinator:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: quantum-hvac-microgrid
+    restart: unless-stopped
+    environment:
+      - PYTHONPATH=/app
+      - LOG_LEVEL=INFO
+      - MICROGRID_MODE=true
+      - SOLAR_CAPACITY_KW=200
+      - BATTERY_CAPACITY_KWH=500
+      - GRID_CONNECTION_LIMIT_KW=400
+      - ENABLE_PEER_TRADING=true
+      - COORDINATION_INTERVAL=300
+    volumes:
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+      - microgrid_data:/app/data
+    ports:
+      - "8002:8000"  # Microgrid API port
+    networks:
+      - quantum-network
+    depends_on:
+      - quantum-hvac-controller
+    healthcheck:
+      test: ["CMD", "python", "-c", "from quantum_ctl.core.microgrid import MicroGridController; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis-cache:
+    image: redis:7-alpine
+    container_name: quantum-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - quantum-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  monitoring:
+    image: prom/prometheus:latest
+    container_name: quantum-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - quantum-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: quantum-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=quantum_hvac_2024
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - quantum-network
+    depends_on:
+      - monitoring
+
+  nginx:
+    image: nginx:alpine
+    container_name: quantum-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      - quantum-network
+    depends_on:
+      - quantum-hvac-controller
+      - microgrid-coordinator
+
+volumes:
+  quantum_data:
+    driver: local
+  microgrid_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  quantum-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -6,6 +6,7 @@ import logging
 import traceback
 import functools
 import asyncio
+import numpy as np
 from typing import Dict, Any, Optional, Callable, Type, Union
 from enum import Enum
 import time
