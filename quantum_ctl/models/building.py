@@ -373,7 +373,7 @@ class Building:
                 } for z in self.zones
             ],
             'thermal_coupling': self.thermal_coupling.tolist(),
-            'occupancy_schedule': self.occupancy_type.value,
+            'occupancy_schedule': self.occupancy_type.value if hasattr(self.occupancy_type, 'value') else str(self.occupancy_type),
             'envelope_ua': self.envelope_ua,
             'location': {'lat': self.latitude, 'lon': self.longitude}
         }
