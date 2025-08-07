@@ -22,6 +22,7 @@ from ..utils.safety import SafetyMonitor, SafetyLimits
 from ..utils.performance import (
     get_resource_manager, performance_monitor, cached_matrix_operation
 )
+from ..optimization.auto_scaler import get_auto_scaler, get_scheduler
 
 
 @dataclass

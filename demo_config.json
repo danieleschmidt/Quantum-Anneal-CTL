@@ -1,0 +1,58 @@
+{
+  "building_id": "demo_office",
+  "zones": [
+    {
+      "zone_id": "zone_1",
+      "area": 100.0,
+      "volume": 300.0,
+      "thermal_mass": 333.3333333333333,
+      "max_heating_power": 10.0,
+      "max_cooling_power": 8.0,
+      "comfort_temp_min": 20.0,
+      "comfort_temp_max": 24.0
+    },
+    {
+      "zone_id": "zone_2",
+      "area": 100.0,
+      "volume": 300.0,
+      "thermal_mass": 333.3333333333333,
+      "max_heating_power": 10.0,
+      "max_cooling_power": 8.0,
+      "comfort_temp_min": 20.0,
+      "comfort_temp_max": 24.0
+    },
+    {
+      "zone_id": "zone_3",
+      "area": 100.0,
+      "volume": 300.0,
+      "thermal_mass": 333.3333333333333,
+      "max_heating_power": 10.0,
+      "max_cooling_power": 8.0,
+      "comfort_temp_min": 20.0,
+      "comfort_temp_max": 24.0
+    }
+  ],
+  "thermal_coupling": [
+    [
+      -0.5,
+      0.1,
+      -0.0
+    ],
+    [
+      0.1,
+      -0.5,
+      0.1
+    ],
+    [
+      -0.0,
+      0.1,
+      -0.5
+    ]
+  ],
+  "occupancy_schedule": "office_standard",
+  "envelope_ua": 500.0,
+  "location": {
+    "lat": 40.7128,
+    "lon": -74.006
+  }
+}
