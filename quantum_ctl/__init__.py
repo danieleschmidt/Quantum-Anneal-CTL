@@ -11,14 +11,18 @@ __email__ = "daniel@terragonlabs.com"
 
 from .core.controller import HVACController
 from .core.microgrid import MicroGridController
+from .core.control_loop import RealTimeControlLoop
 from .models.building import Building
 from .optimization.mpc_to_qubo import MPCToQUBO
 from .integration.bms_connector import BMSConnector
+from .integration.weather_api import WeatherPredictor
 
 __all__ = [
     "HVACController",
-    "MicroGridController", 
+    "MicroGridController",
+    "RealTimeControlLoop", 
     "Building",
     "MPCToQUBO",
     "BMSConnector",
+    "WeatherPredictor",
 ]

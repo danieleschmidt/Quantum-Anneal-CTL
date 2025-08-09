@@ -1,0 +1,230 @@
+# Production Configuration for Quantum HVAC Control
+environment: production
+debug: false
+
+# Logging Configuration
+logging:
+  level: INFO
+  format: json
+  file: /app/logs/quantum-hvac.log
+  max_size_mb: 100
+  backup_count: 10
+  structured_logging: true
+
+# Security Configuration
+security:
+  enforce_https: true
+  session_timeout_seconds: 3600
+  max_failed_login_attempts: 5
+  password_min_length: 12
+  require_mfa: true
+  audit_log_retention_days: 365
+  
+# Database Configuration
+database:
+  url: ${POSTGRES_URL}
+  pool_size: 20
+  max_overflow: 30
+  pool_timeout: 30
+  pool_recycle: 3600
+  echo: false
+  
+# Redis Configuration  
+redis:
+  url: ${REDIS_URL}
+  max_connections: 100
+  socket_timeout: 30
+  health_check_interval: 30
+
+# Quantum Computing Configuration
+quantum:
+  default_solver: "hybrid_v2"
+  max_problem_size: 10000
+  timeout_seconds: 300
+  fallback_enabled: true
+  cache_enabled: true
+  cache_ttl_hours: 24
+  
+  # D-Wave Configuration
+  dwave:
+    api_token: ${DWAVE_API_TOKEN}
+    endpoint: "https://cloud.dwavesys.com/sapi"
+    solver: "Advantage_system4.1"
+    
+  # Performance Limits
+  performance:
+    max_concurrent_optimizations: 10
+    optimization_queue_size: 100
+    memory_limit_gb: 4
+
+# HVAC Control Configuration
+hvac:
+  default_prediction_horizon_hours: 24
+  control_interval_minutes: 15
+  safety_temperature_min: 18.0
+  safety_temperature_max: 28.0
+  emergency_setpoint: 22.0
+  comfort_tolerance: 1.0
+  
+  # Energy Optimization
+  energy:
+    cost_weight: 0.6
+    comfort_weight: 0.3
+    carbon_weight: 0.1
+    peak_shaving_enabled: true
+    demand_response_enabled: true
+
+# Weather API Configuration
+weather:
+  openweather:
+    api_key: ${OPENWEATHER_API_KEY}
+    base_url: "http://api.openweathermap.org/data/2.5"
+    timeout_seconds: 30
+    cache_ttl_minutes: 15
+    
+  sources:
+    - openweather
+  
+  ensemble_method: "weighted_average"
+  confidence_threshold: 0.8
+
+# Building Management System Configuration
+bms:
+  protocols:
+    - bacnet
+    - modbus
+    - mqtt
+    - http
+    
+  timeouts:
+    connection_timeout: 30
+    read_timeout: 10
+    write_timeout: 15
+    
+  retry:
+    max_attempts: 3
+    backoff_factor: 2.0
+    max_delay: 60
+
+# Monitoring and Alerting
+monitoring:
+  prometheus:
+    enabled: true
+    port: 8001
+    metrics_path: /metrics
+    
+  health_checks:
+    interval_seconds: 30
+    timeout_seconds: 10
+    
+  alerts:
+    email_enabled: true
+    slack_enabled: true
+    webhook_enabled: true
+    
+    rules:
+      - name: high_energy_consumption
+        metric: hvac_energy_consumption_kw
+        threshold: 1000
+        severity: warning
+        duration: 300
+        
+      - name: quantum_solver_failure
+        metric: quantum_operations_failed_total
+        threshold: 5
+        severity: critical
+        duration: 60
+        
+      - name: bms_disconnection
+        metric: bms_connectivity_status
+        threshold: 0
+        severity: critical
+        duration: 30
+
+# Dashboard Configuration
+dashboard:
+  enabled: true
+  host: 0.0.0.0
+  port: 8080
+  websocket_enabled: true
+  
+  charts:
+    refresh_interval_seconds: 30
+    max_data_points: 1000
+    
+  authentication:
+    required: true
+    session_timeout: 3600
+
+# Performance Optimization
+performance:
+  caching:
+    enabled: true
+    max_memory_cache_size: 1000
+    similarity_threshold: 0.95
+    cleanup_interval_hours: 6
+    
+  async:
+    max_workers: 20
+    queue_size: 1000
+    
+  resource_limits:
+    max_memory_usage_percent: 80
+    max_cpu_usage_percent: 90
+
+# Backup and Recovery
+backup:
+  enabled: true
+  interval_hours: 6
+  retention_days: 30
+  
+  destinations:
+    - type: s3
+      bucket: quantum-hvac-backups
+      region: us-west-2
+      
+    - type: local
+      path: /app/backups
+
+# Compliance and Audit
+compliance:
+  gdpr_enabled: true
+  data_retention_days: 2555  # 7 years
+  audit_trail_enabled: true
+  encryption_at_rest: true
+  encryption_in_transit: true
+
+# Rate Limiting
+rate_limiting:
+  enabled: true
+  default_limit: "100/hour"
+  burst_limit: 20
+  
+  per_endpoint:
+    "/api/control/optimize": "10/minute"
+    "/api/dashboard": "1000/hour"
+    "/api/auth/login": "5/minute"
+
+# Feature Flags
+features:
+  multi_objective_optimization: true
+  uncertainty_quantification: true
+  quantum_decomposition: true
+  peer_to_peer_energy_trading: false
+  machine_learning_predictions: true
+  
+# Third-party Integrations
+integrations:
+  slack:
+    webhook_url: ${SLACK_WEBHOOK_URL}
+    
+  email:
+    smtp_server: ${SMTP_SERVER}
+    smtp_port: 587
+    username: ${SMTP_USERNAME}
+    password: ${SMTP_PASSWORD}
+    
+  cloud_storage:
+    provider: aws
+    region: us-west-2
+    bucket: quantum-hvac-data
