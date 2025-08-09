@@ -365,6 +365,59 @@ class HVACController:
         
         return emergency_schedule
     
+    async def optimize_with_forecast(
+        self,
+        current_state: BuildingState,
+        weather_forecast,  # WeatherForecast object
+        optimization_horizon: int = 24
+    ):
+        """
+        Optimize using weather forecast data.
+        
+        Args:
+            current_state: Current building state
+            weather_forecast: WeatherForecast object from weather API
+            optimization_horizon: Hours to optimize ahead
+            
+        Returns:
+            Optimization schedule with control sequence
+        """
+        # Convert weather forecast to numpy arrays
+        horizon_steps = min(optimization_horizon, len(weather_forecast.hourly))
+        
+        weather_array = np.array([
+            [point.temperature, point.humidity, point.solar_radiation]
+            for point in weather_forecast.hourly[:horizon_steps]
+        ])
+        
+        # Simple energy price model (could be enhanced with real pricing data)
+        base_price = 0.12  # $/kWh
+        peak_hours = np.array([17, 18, 19, 20])  # 5-8 PM peak
+        
+        energy_prices = np.full(horizon_steps, base_price)
+        current_hour = int(datetime.now().hour)
+        
+        for i in range(horizon_steps):
+            hour = (current_hour + i) % 24
+            if hour in peak_hours:
+                energy_prices[i] = base_price * 1.5  # 50% higher during peak
+        
+        # Run quantum optimization
+        control_sequence = await self.optimize(
+            current_state=current_state,
+            weather_forecast=weather_array,
+            energy_prices=energy_prices
+        )
+        
+        # Return structured result
+        return type('OptimizationResult', (), {
+            'control_sequence': control_sequence,
+            'weather_confidence': weather_forecast.confidence_score,
+            'horizon_hours': optimization_horizon,
+            'energy_prices': energy_prices,
+            'optimization_timestamp': datetime.now()
+        })()
+    
     def apply_schedule(self, control_schedule: np.ndarray) -> None:
         """Apply the first step of the control schedule to the building."""
         if len(control_schedule) == 0:

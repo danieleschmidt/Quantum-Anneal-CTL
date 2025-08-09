@@ -80,9 +80,17 @@ class BMSConnector:
             import BAC0
             device_address = self.connection_params.get('device_address', '192.168.1.100')
             device_id = self.connection_params.get('device_id', 1234)
+            object_name = self.connection_params.get('object_name', 'QuantumCTL')
             
-            self._client = BAC0.connect(ip=device_address, deviceId=device_id)
-            self.logger.info(f"BACnet client connected to {device_address}")
+            # Initialize BACnet network with error handling
+            self._client = BAC0.lite(ip=device_address, deviceId=device_id, objectName=object_name)
+            
+            # Configure communication parameters
+            self._bacnet_timeout = self.connection_params.get('timeout', 10.0)
+            self._target_device = self.connection_params.get('target_device_id', 2)
+            self._target_address = self.connection_params.get('target_address', '192.168.1.101')
+            
+            self.logger.info(f"BACnet client initialized: {device_address}:{device_id}")
             
         except ImportError:
             self.logger.warning("BAC0 not available, using mock BACnet client")
@@ -369,20 +377,29 @@ class BMSConnector:
     
     async def _read_bms_point(self, address: str) -> Optional[float]:
         """Read raw value from BMS."""
-        # Mock implementation - return random-ish values
-        import random
-        await asyncio.sleep(0.01)  # Simulate network delay
-        
-        if "temp" in address.lower():
-            return random.uniform(18.0, 26.0)
-        elif "humid" in address.lower():
-            return random.uniform(30.0, 70.0)
-        elif "power" in address.lower():
-            return random.uniform(0.0, 10.0)
-        elif "setpoint" in address.lower():
-            return random.uniform(0.0, 1.0)
+        if self.protocol == Protocol.BACNET:
+            return await self._read_bacnet_point(address)
+        elif self.protocol == Protocol.MODBUS:
+            return await self._read_modbus_point(address)
+        elif self.protocol == Protocol.MQTT:
+            return await self._read_mqtt_point(address)
+        elif self.protocol == Protocol.HTTP:
+            return await self._read_http_point(address)
         else:
-            return random.uniform(0.0, 100.0)
+            # Fallback mock implementation
+            import random
+            await asyncio.sleep(0.01)
+            
+            if "temp" in address.lower():
+                return random.uniform(18.0, 26.0)
+            elif "humid" in address.lower():
+                return random.uniform(30.0, 70.0)
+            elif "power" in address.lower():
+                return random.uniform(0.0, 10.0)
+            elif "setpoint" in address.lower():
+                return random.uniform(0.0, 1.0)
+            else:
+                return random.uniform(0.0, 100.0)
     
     async def write_point(self, logical_name: str, value: float) -> bool:
         """Write single point value."""
@@ -414,9 +431,18 @@ class BMSConnector:
     
     async def _write_bms_point(self, address: str, value: float) -> bool:
         """Write raw value to BMS."""
-        # Mock implementation
-        await asyncio.sleep(0.01)  # Simulate network delay
-        return True  # Always successful in mock
+        if self.protocol == Protocol.BACNET:
+            return await self._write_bacnet_point(address, value)
+        elif self.protocol == Protocol.MODBUS:
+            return await self._write_modbus_point(address, value)
+        elif self.protocol == Protocol.MQTT:
+            return await self._write_mqtt_point(address, value)
+        elif self.protocol == Protocol.HTTP:
+            return await self._write_http_point(address, value)
+        else:
+            # Mock implementation
+            await asyncio.sleep(0.01)
+            return True
     
     async def read_state(self) -> BuildingState:
         """Read complete building state from BMS."""
@@ -498,6 +524,222 @@ class BMSConnector:
         
         self.logger.info(f"Wrote {success_count}/{len(control_vector)} control commands")
         return success_count == len(control_vector)
+    
+    async def _read_bacnet_point(self, address: str) -> Optional[float]:
+        """Read BACnet point value."""
+        if isinstance(self._client, str):  # Mock
+            import random
+            await asyncio.sleep(0.01)
+            return random.uniform(18.0, 26.0) if "temp" in address.lower() else random.uniform(0.0, 100.0)
+        
+        try:
+            # Parse BACnet address: "device_id:object_type:object_instance"
+            parts = address.split(':')
+            if len(parts) != 3:
+                raise ValueError(f"Invalid BACnet address format: {address}")
+            
+            device_id = int(parts[0])
+            object_type = parts[1]  # e.g., 'analogInput', 'analogOutput'
+            instance = int(parts[2])
+            
+            # Read present value property
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self._client.read(f"{self._target_address} {object_type} {instance} presentValue")
+            )
+            
+            return float(result) if result is not None else None
+            
+        except Exception as e:
+            self.logger.error(f"BACnet read failed for {address}: {e}")
+            return None
+    
+    async def _write_bacnet_point(self, address: str, value: float) -> bool:
+        """Write BACnet point value."""
+        if isinstance(self._client, str):  # Mock
+            await asyncio.sleep(0.01)
+            return True
+        
+        try:
+            # Parse BACnet address
+            parts = address.split(':')
+            if len(parts) != 3:
+                raise ValueError(f"Invalid BACnet address format: {address}")
+            
+            device_id = int(parts[0])
+            object_type = parts[1]
+            instance = int(parts[2])
+            
+            # Write present value property
+            success = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self._client.write(f"{self._target_address} {object_type} {instance} presentValue {value}")
+            )
+            
+            return success == "WriteProperty request acknowledged"
+            
+        except Exception as e:
+            self.logger.error(f"BACnet write failed for {address}: {e}")
+            return False
+    
+    async def _read_modbus_point(self, address: str) -> Optional[float]:
+        """Read Modbus point value."""
+        if isinstance(self._client, str):  # Mock
+            import random
+            await asyncio.sleep(0.01)
+            return random.uniform(0.0, 100.0)
+        
+        try:
+            # Parse Modbus address: "type:address" where type is HR/IR/CO/DI
+            parts = address.split(':')
+            if len(parts) != 2:
+                raise ValueError(f"Invalid Modbus address format: {address}")
+            
+            register_type = parts[0].upper()  # HR=Holding, IR=Input, CO=Coil, DI=Discrete
+            register_address = int(parts[1])
+            slave_id = self.connection_params.get('slave_id', 1)
+            
+            if register_type == 'HR':  # Holding Register
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self._client.read_holding_registers(register_address, 1, slave_id)
+                )
+                if not result.isError():
+                    return float(result.registers[0])
+            elif register_type == 'IR':  # Input Register
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self._client.read_input_registers(register_address, 1, slave_id)
+                )
+                if not result.isError():
+                    return float(result.registers[0])
+            elif register_type == 'CO':  # Coil
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self._client.read_coils(register_address, 1, slave_id)
+                )
+                if not result.isError():
+                    return float(result.bits[0])
+            elif register_type == 'DI':  # Discrete Input
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self._client.read_discrete_inputs(register_address, 1, slave_id)
+                )
+                if not result.isError():
+                    return float(result.bits[0])
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Modbus read failed for {address}: {e}")
+            return None
+    
+    async def _write_modbus_point(self, address: str, value: float) -> bool:
+        """Write Modbus point value."""
+        if isinstance(self._client, str):  # Mock
+            await asyncio.sleep(0.01)
+            return True
+        
+        try:
+            parts = address.split(':')
+            if len(parts) != 2:
+                raise ValueError(f"Invalid Modbus address format: {address}")
+            
+            register_type = parts[0].upper()
+            register_address = int(parts[1])
+            slave_id = self.connection_params.get('slave_id', 1)
+            
+            if register_type == 'HR':  # Holding Register
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self._client.write_register(register_address, int(value), slave_id)
+                )
+                return not result.isError()
+            elif register_type == 'CO':  # Coil
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: self._client.write_coil(register_address, bool(value), slave_id)
+                )
+                return not result.isError()
+            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Modbus write failed for {address}: {e}")
+            return False
+    
+    async def _read_mqtt_point(self, address: str) -> Optional[float]:
+        """Read MQTT point value from cached data."""
+        if isinstance(self._client, str):  # Mock
+            import random
+            await asyncio.sleep(0.01)
+            return random.uniform(0.0, 100.0)
+        
+        # MQTT is subscription-based, read from cache
+        if hasattr(self, '_mqtt_values') and address in self._mqtt_values:
+            try:
+                return float(self._mqtt_values[address])
+            except (ValueError, TypeError):
+                self.logger.error(f"Invalid MQTT value for {address}: {self._mqtt_values[address]}")
+                return None
+        
+        return None
+    
+    async def _write_mqtt_point(self, address: str, value: float) -> bool:
+        """Write MQTT point value."""
+        if isinstance(self._client, str):  # Mock
+            await asyncio.sleep(0.01)
+            return True
+        
+        try:
+            # Publish to MQTT topic
+            result = self._client.publish(address, str(value))
+            return result.rc == 0  # MQTT success code
+            
+        except Exception as e:
+            self.logger.error(f"MQTT publish failed for {address}: {e}")
+            return False
+    
+    async def _read_http_point(self, address: str) -> Optional[float]:
+        """Read HTTP point value via REST API."""
+        if isinstance(self._client, str):  # Mock
+            import random
+            await asyncio.sleep(0.01)
+            return random.uniform(0.0, 100.0)
+        
+        try:
+            base_url = self.connection_params.get('base_url', 'http://localhost:8080')
+            endpoint = f"{base_url}/api/points/{address}"
+            
+            async with self._client.get(endpoint) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return float(data.get('value', 0.0))
+                else:
+                    self.logger.error(f"HTTP read failed: {response.status}")
+                    return None
+                    
+        except Exception as e:
+            self.logger.error(f"HTTP read failed for {address}: {e}")
+            return None
+    
+    async def _write_http_point(self, address: str, value: float) -> bool:
+        """Write HTTP point value via REST API."""
+        if isinstance(self._client, str):  # Mock
+            await asyncio.sleep(0.01)
+            return True
+        
+        try:
+            base_url = self.connection_params.get('base_url', 'http://localhost:8080')
+            endpoint = f"{base_url}/api/points/{address}"
+            payload = {'value': value}
+            
+            async with self._client.put(endpoint, json=payload) as response:
+                return response.status in [200, 204]  # Success codes
+                
+        except Exception as e:
+            self.logger.error(f"HTTP write failed for {address}: {e}")
+            return False
     
     def control_loop(self, interval_seconds: int = 300):
         """Decorator for control loop functions."""

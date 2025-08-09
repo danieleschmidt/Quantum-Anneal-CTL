@@ -5,9 +5,10 @@ System monitoring and health checks for quantum HVAC control.
 import time
 import psutil
 import logging
-from typing import Dict, Any, List, Optional
+import json
+from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass, field
-from collections import deque
+from collections import deque, defaultdict
 import threading
 import asyncio
 
@@ -357,3 +358,259 @@ class RetryManager:
                 self.logger.warning(f"Attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s")
                 
                 time.sleep(delay)
+
+
+# Enhanced monitoring features for Generation 2
+class AdvancedMetricsCollector:
+    """Enhanced metrics collector with Prometheus integration."""
+    
+    def __init__(self):
+        self.logger = logging.getLogger("advanced_metrics")
+        self.metrics_buffer = deque(maxlen=10000)
+        
+        # Try to import prometheus_client
+        try:
+            from prometheus_client import Counter, Histogram, Gauge, CollectorRegistry
+            self.prometheus_available = True
+            self.registry = CollectorRegistry()
+            self._setup_prometheus_metrics()
+        except ImportError:
+            self.logger.warning("prometheus_client not available, using basic metrics only")
+            self.prometheus_available = False
+    
+    def _setup_prometheus_metrics(self):
+        """Setup Prometheus metrics."""
+        if not self.prometheus_available:
+            return
+        
+        from prometheus_client import Counter, Histogram, Gauge
+        
+        # Core quantum control metrics
+        self.quantum_operations = Counter(
+            'quantum_operations_total', 
+            'Total quantum operations performed',
+            ['operation_type', 'status'],
+            registry=self.registry
+        )
+        
+        self.optimization_duration = Histogram(
+            'optimization_duration_seconds',
+            'Time spent on optimization',
+            ['solver_type'],
+            registry=self.registry
+        )
+        
+        self.bms_connectivity = Gauge(
+            'bms_connectivity_status',
+            'BMS connection status (1=connected, 0=disconnected)',
+            ['protocol'],
+            registry=self.registry
+        )
+        
+        self.energy_consumption = Gauge(
+            'hvac_energy_consumption_kw',
+            'Current HVAC energy consumption',
+            ['building', 'zone'],
+            registry=self.registry
+        )
+        
+        self.temperature_control = Gauge(
+            'zone_temperature_celsius',
+            'Zone temperature measurements',
+            ['building', 'zone'],
+            registry=self.registry
+        )
+    
+    def record_quantum_operation(self, operation_type: str, success: bool, duration: float = 0.0):
+        """Record quantum operation metrics."""
+        status = 'success' if success else 'failure'
+        
+        if self.prometheus_available:
+            self.quantum_operations.labels(operation_type=operation_type, status=status).inc()
+            if operation_type in ['optimization', 'embedding']:
+                self.optimization_duration.labels(solver_type='quantum').observe(duration)
+        
+        # Store in buffer for local access
+        metric_point = {
+            'timestamp': time.time(),
+            'type': 'quantum_operation',
+            'operation_type': operation_type,
+            'success': success,
+            'duration': duration
+        }
+        self.metrics_buffer.append(metric_point)
+    
+    def record_bms_status(self, protocol: str, connected: bool):
+        """Record BMS connectivity status."""
+        if self.prometheus_available:
+            self.bms_connectivity.labels(protocol=protocol).set(1.0 if connected else 0.0)
+        
+        self.metrics_buffer.append({
+            'timestamp': time.time(),
+            'type': 'bms_status',
+            'protocol': protocol,
+            'connected': connected
+        })
+    
+    def record_building_metrics(self, building_id: str, zone_data: Dict[str, Dict]):
+        """Record building temperature and energy metrics."""
+        for zone_id, data in zone_data.items():
+            temp = data.get('temperature', 0.0)
+            power = data.get('power_kw', 0.0)
+            
+            if self.prometheus_available:
+                self.temperature_control.labels(building=building_id, zone=zone_id).set(temp)
+                self.energy_consumption.labels(building=building_id, zone=zone_id).set(power)
+            
+            self.metrics_buffer.append({
+                'timestamp': time.time(),
+                'type': 'building_metrics',
+                'building': building_id,
+                'zone': zone_id,
+                'temperature': temp,
+                'power_kw': power
+            })
+    
+    def get_recent_metrics(self, metric_type: str = None, minutes: int = 60) -> List[Dict]:
+        """Get recent metrics, optionally filtered by type."""
+        cutoff_time = time.time() - (minutes * 60)
+        
+        filtered_metrics = [
+            m for m in self.metrics_buffer 
+            if m['timestamp'] >= cutoff_time
+        ]
+        
+        if metric_type:
+            filtered_metrics = [m for m in filtered_metrics if m.get('type') == metric_type]
+        
+        return filtered_metrics
+
+
+class AlertManager:
+    """Advanced alerting system with multiple notification channels."""
+    
+    def __init__(self):
+        self.logger = logging.getLogger("alert_manager")
+        self.active_alerts: Dict[str, Dict] = {}
+        self.alert_history: deque = deque(maxlen=1000)
+        self.notification_channels: List[Callable] = []
+    
+    def add_notification_channel(self, channel_func: Callable):
+        """Add notification channel (email, Slack, webhook, etc.)."""
+        self.notification_channels.append(channel_func)
+        self.logger.info(f"Added notification channel: {channel_func.__name__}")
+    
+    async def trigger_alert(
+        self,
+        alert_id: str,
+        severity: str,
+        message: str,
+        details: Dict = None
+    ):
+        """Trigger an alert with notification."""
+        alert_data = {
+            'id': alert_id,
+            'severity': severity,
+            'message': message,
+            'details': details or {},
+            'timestamp': time.time(),
+            'status': 'active'
+        }
+        
+        # Store active alert
+        self.active_alerts[alert_id] = alert_data
+        self.alert_history.append(alert_data.copy())
+        
+        # Log the alert
+        log_level = {
+            'info': logging.INFO,
+            'warning': logging.WARNING,
+            'critical': logging.CRITICAL,
+            'error': logging.ERROR
+        }.get(severity.lower(), logging.WARNING)
+        
+        self.logger.log(log_level, f"ALERT [{severity.upper()}] {alert_id}: {message}")
+        
+        # Send notifications
+        for channel in self.notification_channels:
+            try:
+                if asyncio.iscoroutinefunction(channel):
+                    await channel(alert_data)
+                else:
+                    channel(alert_data)
+            except Exception as e:
+                self.logger.error(f"Notification channel error: {e}")
+    
+    async def resolve_alert(self, alert_id: str):
+        """Resolve an active alert."""
+        if alert_id in self.active_alerts:
+            alert = self.active_alerts[alert_id]
+            alert['status'] = 'resolved'
+            alert['resolved_at'] = time.time()
+            
+            # Move to history and remove from active
+            self.alert_history.append(alert)
+            del self.active_alerts[alert_id]
+            
+            self.logger.info(f"RESOLVED: Alert {alert_id}")
+    
+    def get_active_alerts(self, severity: str = None) -> List[Dict]:
+        """Get currently active alerts."""
+        alerts = list(self.active_alerts.values())
+        
+        if severity:
+            alerts = [a for a in alerts if a['severity'].lower() == severity.lower()]
+        
+        return alerts
+    
+    def get_alert_summary(self) -> Dict[str, Any]:
+        """Get alert summary statistics."""
+        recent_alerts = [
+            a for a in self.alert_history 
+            if a['timestamp'] > time.time() - 3600  # Last hour
+        ]
+        
+        severity_counts = defaultdict(int)
+        for alert in recent_alerts:
+            severity_counts[alert['severity']] += 1
+        
+        return {
+            'active_alerts': len(self.active_alerts),
+            'alerts_last_hour': len(recent_alerts),
+            'severity_breakdown': dict(severity_counts),
+            'most_recent_alert': max(recent_alerts, key=lambda x: x['timestamp']) if recent_alerts else None
+        }
+
+
+# Notification channel implementations
+async def slack_notification_channel(alert_data: Dict):
+    """Send alert to Slack (placeholder implementation)."""
+    # In production, this would use Slack API
+    print(f"SLACK ALERT: [{alert_data['severity']}] {alert_data['message']}")
+
+
+async def email_notification_channel(alert_data: Dict):
+    """Send alert via email (placeholder implementation)."""
+    # In production, this would use SMTP
+    print(f"EMAIL ALERT: [{alert_data['severity']}] {alert_data['message']}")
+
+
+async def webhook_notification_channel(alert_data: Dict):
+    """Send alert to webhook endpoint (placeholder implementation)."""
+    # In production, this would make HTTP POST request
+    print(f"WEBHOOK ALERT: {json.dumps(alert_data, indent=2)}")
+
+
+# Global enhanced monitoring instances
+_global_advanced_metrics = AdvancedMetricsCollector()
+_global_alert_manager = AlertManager()
+
+
+def get_advanced_metrics() -> AdvancedMetricsCollector:
+    """Get global advanced metrics collector."""
+    return _global_advanced_metrics
+
+
+def get_alert_manager() -> AlertManager:
+    """Get global alert manager."""
+    return _global_alert_manager
