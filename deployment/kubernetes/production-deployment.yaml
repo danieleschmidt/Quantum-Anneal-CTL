@@ -1,0 +1,378 @@
+# Enhanced Kubernetes deployment for Quantum HVAC Control System - Production
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: quantum-hvac-prod
+  labels:
+    name: quantum-hvac-prod
+    environment: production
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantum-hvac-api
+  namespace: quantum-hvac-prod
+  labels:
+    app: quantum-hvac-api
+    version: v1.0.0
+    environment: production
+spec:
+  replicas: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 2
+  selector:
+    matchLabels:
+      app: quantum-hvac-api
+  template:
+    metadata:
+      labels:
+        app: quantum-hvac-api
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: quantum-hvac-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: api
+        image: quantum-hvac:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: production
+        - name: LOG_LEVEL
+          value: INFO
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: quantum-hvac-secrets
+              key: database-url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: quantum-hvac-secrets
+              key: redis-url
+        - name: DWAVE_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: quantum-hvac-secrets
+              key: dwave-token
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: quantum-hvac-secrets
+              key: secret-key
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi" 
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: config
+        configMap:
+          name: quantum-hvac-config
+      - name: logs
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantum-hvac-api-service
+  namespace: quantum-hvac-prod
+  labels:
+    app: quantum-hvac-api
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+spec:
+  selector:
+    app: quantum-hvac-api
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP
+  type: ClusterIP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: quantum-hvac-ingress
+  namespace: quantum-hvac-prod
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  tls:
+  - hosts:
+    - api.quantum-hvac.com
+    - dashboard.quantum-hvac.com
+    secretName: quantum-hvac-tls
+  rules:
+  - host: api.quantum-hvac.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: quantum-hvac-api-service
+            port:
+              number: 80
+  - host: dashboard.quantum-hvac.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: quantum-hvac-dashboard-service
+            port:
+              number: 80
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quantum-hvac-config
+  namespace: quantum-hvac-prod
+data:
+  production.yaml: |
+    database:
+      url: "${DATABASE_URL}"
+      pool_size: 20
+      max_overflow: 30
+      echo: false
+      
+    redis:
+      url: "${REDIS_URL}"
+      max_connections: 100
+      
+    logging:
+      level: INFO
+      format: json
+      structured: true
+      
+    quantum:
+      solver: hybrid
+      timeout_seconds: 120
+      max_retries: 3
+      
+    security:
+      cors_origins:
+        - "https://dashboard.quantum-hvac.com"
+        - "https://app.quantum-hvac.com"
+      rate_limit:
+        requests_per_minute: 1000
+        burst: 2000
+      jwt_expiry_hours: 24
+      
+    features:
+      caching_enabled: true
+      websockets_enabled: true
+      multi_tenant: true
+      advanced_optimization: true
+      
+    monitoring:
+      metrics_enabled: true
+      health_checks_enabled: true
+      prometheus_metrics: true
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: quantum-hvac-secrets
+  namespace: quantum-hvac-prod
+type: Opaque
+stringData:
+  database-url: "postgresql+asyncpg://quantum:PRODUCTION_PASSWORD@postgres-cluster:5432/quantum_hvac"
+  redis-url: "redis://:PRODUCTION_PASSWORD@redis-cluster:6379/0"
+  dwave-token: "PRODUCTION_DWAVE_TOKEN"
+  secret-key: "PRODUCTION_SECRET_KEY_MINIMUM_32_CHARACTERS_LONG"
+  postgres-password: "PRODUCTION_DB_PASSWORD"
+  redis-password: "PRODUCTION_REDIS_PASSWORD"
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: quantum-hvac-api-pdb
+  namespace: quantum-hvac-prod
+spec:
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app: quantum-hvac-api
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: quantum-hvac-api-hpa
+  namespace: quantum-hvac-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: quantum-hvac-api
+  minReplicas: 5
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: quantum-hvac-api
+  namespace: quantum-hvac-prod
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/quantum-hvac-api-role
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: quantum-hvac-api-role
+rules:
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: quantum-hvac-api-binding
+subjects:
+- kind: ServiceAccount
+  name: quantum-hvac-api
+  namespace: quantum-hvac-prod
+roleRef:
+  kind: ClusterRole
+  name: quantum-hvac-api-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: quantum-hvac-network-policy
+  namespace: quantum-hvac-prod
+spec:
+  podSelector:
+    matchLabels:
+      app: quantum-hvac-api
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: nginx-ingress
+    ports:
+    - protocol: TCP
+      port: 8000
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443  # HTTPS outbound (D-Wave API)
+    - protocol: TCP
+      port: 53   # DNS
+    - protocol: UDP
+      port: 53   # DNS
