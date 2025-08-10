@@ -1,0 +1,182 @@
+# Multi-stage Dockerfile for production deployment
+FROM python:3.12-slim as base
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONHASHSEED=random \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    libpq-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user
+RUN groupadd -r app && useradd -r -g app app
+
+# Set work directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt pyproject.toml ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Install application in development mode
+RUN pip install -e .
+
+# Create necessary directories
+RUN mkdir -p /app/logs /app/data /app/config && \
+    chown -R app:app /app
+
+# Development stage
+FROM base as development
+ENV ENVIRONMENT=development
+EXPOSE 8000
+USER app
+CMD ["uvicorn", "quantum_ctl.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# Production API stage
+FROM base as production
+
+# Install production dependencies
+RUN pip install gunicorn uvloop httptools
+
+# Copy production configuration
+COPY deployment/production/config/ /app/config/
+
+# Security: remove development files
+RUN rm -rf tests/ docs/ examples/ *.md
+
+# Set ownership
+RUN chown -R app:app /app
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Database migration\n\
+if [ "$RUN_MIGRATIONS" = "true" ]; then\n\
+    echo "Running database migrations..."\n\
+    # Add migration command here\n\
+fi\n\
+\n\
+# Start application\n\
+exec gunicorn quantum_ctl.api.app:app \\\n\
+    --bind 0.0.0.0:8000 \\\n\
+    --workers 4 \\\n\
+    --worker-class uvicorn.workers.UvicornWorker \\\n\
+    --access-logfile - \\\n\
+    --error-logfile - \\\n\
+    --log-level info \\\n\
+    --timeout 120 \\\n\
+    --keep-alive 2 \\\n\
+    --max-requests 1000 \\\n\
+    --max-requests-jitter 50 \\\n\
+    --preload\n' > /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
+
+EXPOSE 8000
+USER app
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+ENTRYPOINT ["/app/entrypoint.sh"]
+
+# Dashboard stage
+FROM node:18-alpine as dashboard-build
+
+WORKDIR /app
+# In a real implementation, this would build a React/Vue.js dashboard
+# For now, we'll serve the simple HTML dashboard
+COPY quantum_ctl/dashboard/web_dashboard.py /app/
+RUN mkdir -p /app/static && \
+    echo "Dashboard build placeholder" > /app/static/index.html
+
+FROM python:3.12-slim as dashboard
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y curl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir fastapi uvicorn
+
+COPY --from=dashboard-build /app/static /app/static
+COPY quantum_ctl/dashboard/ /app/dashboard/
+
+RUN groupadd -r app && useradd -r -g app app && \
+    chown -R app:app /app
+
+EXPOSE 8080
+USER app
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+CMD ["uvicorn", "dashboard.web_dashboard:app", "--host", "0.0.0.0", "--port", "8080"]
+
+# Backup stage
+FROM postgres:16-alpine as backup
+
+RUN apk add --no-cache \
+    aws-cli \
+    curl \
+    bash \
+    dcron
+
+# Create backup user
+RUN adduser -D -s /bin/sh backup
+
+# Create backup script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)\n\
+BACKUP_FILE="/backups/quantum_hvac_$TIMESTAMP.sql"\n\
+\n\
+# Create database backup\n\
+pg_dump "$DATABASE_URL" > "$BACKUP_FILE"\n\
+\n\
+# Compress backup\n\
+gzip "$BACKUP_FILE"\n\
+\n\
+# Upload to S3 if configured\n\
+if [ -n "$S3_BUCKET" ]; then\n\
+    aws s3 cp "${BACKUP_FILE}.gz" "s3://$S3_BUCKET/backups/"\n\
+fi\n\
+\n\
+# Clean old backups (keep last 7 days)\n\
+find /backups -name "*.sql.gz" -mtime +7 -delete\n\
+\n\
+echo "Backup completed: ${BACKUP_FILE}.gz"\n' > /usr/local/bin/backup.sh && \
+    chmod +x /usr/local/bin/backup.sh
+
+# Setup cron
+RUN echo "0 2 * * * /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1" | crontab -
+
+VOLUME ["/backups"]
+
+CMD ["crond", "-f", "-d", "8"]
+
+# Testing stage
+FROM base as testing
+
+# Install test dependencies
+RUN pip install pytest pytest-asyncio pytest-cov black isort flake8 mypy
+
+# Copy test files
+COPY tests/ tests/
+
+# Run tests
+USER app
+CMD ["python", "-m", "pytest", "tests/", "-v", "--cov=quantum_ctl"]
