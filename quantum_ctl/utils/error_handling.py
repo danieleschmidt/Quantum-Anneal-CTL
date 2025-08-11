@@ -377,6 +377,217 @@ class ErrorReporter:
             self.logger.error(f"Failed to send webhook alert: {e}")
 
 
+# Circuit breaker for critical systems
+class CircuitBreaker:
+    """Circuit breaker pattern for preventing cascading failures."""
+    
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = 'closed'  # closed, open, half-open
+        self.logger = logging.getLogger(__name__)
+    
+    def call(self, func: Callable, *args, **kwargs):
+        """Call function through circuit breaker."""
+        if self.state == 'open':
+            if self._should_attempt_reset():
+                self.state = 'half-open'
+                self.logger.info("Circuit breaker attempting reset")
+            else:
+                raise QuantumControlError(
+                    "Circuit breaker is open - function calls blocked",
+                    category=ErrorCategory.SYSTEM,
+                    severity=ErrorSeverity.HIGH
+                )
+        
+        try:
+            result = func(*args, **kwargs)
+            self._on_success()
+            return result
+        except Exception as e:
+            self._on_failure()
+            raise
+    
+    def _should_attempt_reset(self) -> bool:
+        """Check if circuit breaker should attempt reset."""
+        if self.last_failure_time is None:
+            return True
+        return time.time() - self.last_failure_time > self.recovery_timeout
+    
+    def _on_success(self):
+        """Handle successful function call."""
+        if self.state == 'half-open':
+            self.state = 'closed'
+            self.failure_count = 0
+            self.logger.info("Circuit breaker reset to closed state")
+    
+    def _on_failure(self):
+        """Handle failed function call."""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        
+        if self.failure_count >= self.failure_threshold:
+            self.state = 'open'
+            self.logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
+
+
+class AdvancedErrorHandler(ErrorHandler):
+    """Enhanced error handler with monitoring integration."""
+    
+    def __init__(self, logger_name: str = __name__, monitor=None):
+        super().__init__(logger_name)
+        self.monitor = monitor
+        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
+        
+        # Enhanced recovery strategies
+        self._register_advanced_strategies()
+    
+    def _register_advanced_strategies(self):
+        """Register advanced error recovery strategies."""
+        self.recovery_strategies[ErrorCategory.SYSTEM] = self._recover_system_error
+        self.recovery_strategies[ErrorCategory.BUILDING_MODEL] = self._recover_building_model
+    
+    def handle_error(self, error: Exception, context: Dict[str, Any] = None) -> Optional[Any]:
+        """Enhanced error handling with monitoring integration."""
+        # Convert to QuantumControlError if needed
+        if not isinstance(error, QuantumControlError):
+            error = QuantumControlError(
+                str(error),
+                category=self._classify_error(error),
+                context=context
+            )
+        
+        # Record error in monitoring system
+        if self.monitor:
+            self.monitor.record_error(
+                error.category.value,
+                error.severity.value,
+                error
+            )
+        
+        # Call parent handler
+        return super().handle_error(error, context)
+    
+    def get_circuit_breaker(self, name: str) -> CircuitBreaker:
+        """Get or create circuit breaker."""
+        if name not in self.circuit_breakers:
+            self.circuit_breakers[name] = CircuitBreaker()
+        return self.circuit_breakers[name]
+    
+    def _recover_system_error(self, error: QuantumControlError, context: Dict[str, Any]) -> Any:
+        """Recovery strategy for system errors."""
+        self.logger.info("Attempting system error recovery...")
+        
+        # Strategy 1: Clear caches to free memory
+        if 'memory' in str(error).lower():
+            if 'controller' in context:
+                controller = context['controller']
+                if hasattr(controller, 'clear_caches'):
+                    controller.clear_caches()
+                    self.logger.info("Cleared system caches")
+                    return "caches_cleared"
+        
+        # Strategy 2: Reduce system load
+        if 'cpu' in str(error).lower() or 'load' in str(error).lower():
+            self.logger.info("Reducing system load")
+            return {'reduce_load': True, 'priority': 'low'}
+        
+        raise error
+    
+    def _recover_building_model(self, error: QuantumControlError, context: Dict[str, Any]) -> Any:
+        """Recovery strategy for building model errors."""
+        self.logger.info("Attempting building model recovery...")
+        
+        # Strategy 1: Use simplified model
+        if 'building' in context:
+            building = context['building']
+            if hasattr(building, 'use_simplified_model'):
+                building.use_simplified_model(True)
+                self.logger.info("Switched to simplified building model")
+                return "simplified_model"
+        
+        # Strategy 2: Reset model parameters
+        if 'validation' in str(error).lower():
+            self.logger.info("Resetting building model to defaults")
+            return {'reset_model': True, 'use_defaults': True}
+        
+        raise error
+    
+    def get_comprehensive_status(self) -> Dict[str, Any]:
+        """Get comprehensive error handling status."""
+        status = super().get_error_statistics()
+        
+        # Add circuit breaker status
+        circuit_status = {}
+        for name, breaker in self.circuit_breakers.items():
+            circuit_status[name] = {
+                'state': breaker.state,
+                'failure_count': breaker.failure_count,
+                'last_failure': breaker.last_failure_time
+            }
+        
+        status['circuit_breakers'] = circuit_status
+        status['monitoring_integration'] = self.monitor is not None
+        
+        return status
+
+
+# Enhanced retry decorator with exponential backoff
+def retry_with_backoff(
+    max_retries: int = 3,
+    initial_delay: float = 1.0,
+    max_delay: float = 60.0,
+    backoff_factor: float = 2.0,
+    exceptions: tuple = (Exception,)
+):
+    """Decorator for retrying functions with exponential backoff."""
+    def decorator(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            delay = initial_delay
+            last_exception = None
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    return await func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt == max_retries:
+                        break
+                    
+                    await asyncio.sleep(delay)
+                    delay = min(delay * backoff_factor, max_delay)
+            
+            raise last_exception
+        
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            delay = initial_delay
+            last_exception = None
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt == max_retries:
+                        break
+                    
+                    time.sleep(delay)
+                    delay = min(delay * backoff_factor, max_delay)
+            
+            raise last_exception
+        
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
+    
+    return decorator
+
+
 # Global error handler instance
-global_error_handler = ErrorHandler()
+global_error_handler = AdvancedErrorHandler()
 global_error_reporter = ErrorReporter()

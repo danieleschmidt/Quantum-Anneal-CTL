@@ -74,54 +74,107 @@ class BMSConnector:
             raise ValueError(f"Unsupported protocol: {self.protocol}")
     
     def _initialize_bacnet_client(self) -> None:
-        """Initialize BACnet client."""
+        """Initialize enhanced BACnet client."""
         try:
-            # Try to use BAC0 for real BACnet communication
-            import BAC0
-            device_address = self.connection_params.get('device_address', '192.168.1.100')
-            device_id = self.connection_params.get('device_id', 1234)
-            object_name = self.connection_params.get('object_name', 'QuantumCTL')
+            from .bacnet_enhanced import EnhancedBACnetClient
             
-            # Initialize BACnet network with error handling
-            self._client = BAC0.lite(ip=device_address, deviceId=device_id, objectName=object_name)
+            device_id = self.connection_params.get('device_id', 1001)
+            object_name = self.connection_params.get('object_name', 'QuantumCTL-BACnet')
+            ip_address = self.connection_params.get('ip_address', '192.168.1.100/24')
+            port = self.connection_params.get('port', 47808)
             
-            # Configure communication parameters
-            self._bacnet_timeout = self.connection_params.get('timeout', 10.0)
-            self._target_device = self.connection_params.get('target_device_id', 2)
-            self._target_address = self.connection_params.get('target_address', '192.168.1.101')
+            self._client = EnhancedBACnetClient(
+                device_id=device_id,
+                object_name=object_name,
+                ip_address=ip_address,
+                port=port
+            )
             
-            self.logger.info(f"BACnet client initialized: {device_address}:{device_id}")
+            self.logger.info(f"Enhanced BACnet client initialized: {ip_address} (device {device_id})")
             
-        except ImportError:
-            self.logger.warning("BAC0 not available, using mock BACnet client")
-            self._client = "bacnet_mock"
+        except ImportError as e:
+            self.logger.warning(f"Enhanced BACnet not available ({e}), using legacy implementation")
+            try:
+                # Fallback to original BAC0 implementation
+                import BAC0
+                device_address = self.connection_params.get('device_address', '192.168.1.100')
+                device_id = self.connection_params.get('device_id', 1234)
+                object_name = self.connection_params.get('object_name', 'QuantumCTL')
+                
+                self._client = BAC0.lite(ip=device_address, deviceId=device_id, objectName=object_name)
+                
+                self._bacnet_timeout = self.connection_params.get('timeout', 10.0)
+                self._target_device = self.connection_params.get('target_device_id', 2)
+                self._target_address = self.connection_params.get('target_address', '192.168.1.101')
+                
+                self.logger.info(f"Legacy BACnet client initialized: {device_address}:{device_id}")
+                
+            except ImportError:
+                self.logger.warning("BAC0 not available, using mock BACnet client")
+                self._client = "bacnet_mock"
+            except Exception as e:
+                self.logger.error(f"Failed to initialize BACnet client: {e}")
+                self._client = "bacnet_mock"
         except Exception as e:
-            self.logger.error(f"Failed to initialize BACnet client: {e}")
+            self.logger.error(f"Failed to initialize enhanced BACnet client: {e}")
             self._client = "bacnet_mock"
     
     def _initialize_modbus_client(self) -> None:
-        """Initialize Modbus client.""" 
+        """Initialize enhanced Modbus client.""" 
         try:
-            from pymodbus.client import ModbusSerialClient, ModbusTcpClient
+            from .modbus_enhanced import EnhancedModbusClient
             
             connection_type = self.connection_params.get('type', 'tcp')
+            host = self.connection_params.get('host', 'localhost')
+            port = self.connection_params.get('port', 502)
+            serial_port = self.connection_params.get('serial_port', '/dev/ttyUSB0')
+            baudrate = self.connection_params.get('baudrate', 9600)
+            parity = self.connection_params.get('parity', 'N')
+            stopbits = self.connection_params.get('stopbits', 1)
+            bytesize = self.connection_params.get('bytesize', 8)
+            timeout = self.connection_params.get('timeout', 3.0)
             
-            if connection_type == 'tcp':
-                host = self.connection_params.get('host', 'localhost')
-                port = self.connection_params.get('port', 502)
-                self._client = ModbusTcpClient(host=host, port=port)
-            else:
-                port = self.connection_params.get('serial_port', '/dev/ttyUSB0')
-                baudrate = self.connection_params.get('baudrate', 9600)
-                self._client = ModbusSerialClient(port=port, baudrate=baudrate)
+            self._client = EnhancedModbusClient(
+                connection_type=connection_type,
+                host=host,
+                port=port,
+                serial_port=serial_port,
+                baudrate=baudrate,
+                parity=parity,
+                stopbits=stopbits,
+                bytesize=bytesize,
+                timeout=timeout
+            )
+            
+            self.logger.info(f"Enhanced Modbus {connection_type} client initialized")
+            
+        except ImportError as e:
+            self.logger.warning(f"Enhanced Modbus not available ({e}), using legacy implementation")
+            try:
+                # Fallback to original pymodbus implementation
+                from pymodbus.client import ModbusSerialClient, ModbusTcpClient
                 
-            self.logger.info(f"Modbus {connection_type} client initialized")
-            
-        except ImportError:
-            self.logger.warning("pymodbus not available, using mock Modbus client")
-            self._client = "modbus_mock"
+                connection_type = self.connection_params.get('type', 'tcp')
+                
+                if connection_type == 'tcp':
+                    host = self.connection_params.get('host', 'localhost')
+                    port = self.connection_params.get('port', 502)
+                    self._client = ModbusTcpClient(host=host, port=port)
+                else:
+                    port = self.connection_params.get('serial_port', '/dev/ttyUSB0')
+                    baudrate = self.connection_params.get('baudrate', 9600)
+                    self._client = ModbusSerialClient(port=port, baudrate=baudrate)
+                    
+                self.logger.info(f"Legacy Modbus {connection_type} client initialized")
+                
+            except ImportError:
+                self.logger.warning("pymodbus not available, using mock Modbus client")
+                self._client = "modbus_mock"
+            except Exception as e:
+                self.logger.error(f"Failed to initialize Modbus client: {e}")
+                self._client = "modbus_mock"
         except Exception as e:
-            self.logger.error(f"Failed to initialize Modbus client: {e}")
+            self.logger.error(f"Failed to initialize enhanced Modbus client: {e}")
             self._client = "modbus_mock"
     
     def _initialize_mqtt_client(self) -> None:

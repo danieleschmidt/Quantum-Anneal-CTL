@@ -14,7 +14,13 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 try:
-    from dwave.system import DWaveSampler, LazyFixedEmbeddingComposite
+    from ..utils.dwave_config import dwave_config
+except ImportError:
+    # Handle relative import issues during testing
+    dwave_config = None
+
+try:
+    from dwave.system import DWaveSampler, LazyFixedEmbeddingComposite, LeapHybridSampler
     from dwave.system.composites import EmbeddingComposite
     from dwave.embedding import embed_qubo, unembed_sampleset
     from dwave.embedding.chain_breaks import majority_vote
@@ -92,29 +98,104 @@ class QuantumSolver:
         self._initialize_solver()
     
     def _initialize_solver(self) -> None:
-        """Initialize the quantum solver."""
+        """Initialize the quantum solver with real D-Wave connectivity."""
         if not DWAVE_AVAILABLE:
             self.logger.warning("D-Wave Ocean SDK not available, using classical fallback")
             self._sampler = None
             return
         
+        # Check if D-Wave is configured
+        if dwave_config and not dwave_config.is_configured():
+            self.logger.warning("D-Wave not configured. Set DWAVE_API_TOKEN environment variable")
+            self._sampler = None
+            return
+        
         try:
+            # Test D-Wave cloud connection first
+            if dwave_config:
+                client = Client.from_config(
+                    token=dwave_config.api_token,
+                    endpoint=dwave_config.endpoint
+                )
+            else:
+                client = Client.from_config()
+                
+            available_solvers = client.get_solvers()
+            
+            if not available_solvers:
+                raise Exception("No D-Wave solvers available")
+            
+            self.logger.info(f"Connected to D-Wave cloud, {len(available_solvers)} solvers available")
+            
             if self.solver_type == "qpu":
-                # Direct QPU access
-                self._sampler = EmbeddingComposite(DWaveSampler())
-                self.logger.info("Initialized D-Wave QPU sampler")
+                # Find best available QPU solver
+                qpu_solvers = [s for s in available_solvers if s.solver_type == 'qpu']
+                if not qpu_solvers:
+                    raise Exception("No QPU solvers available")
+                
+                # Select the largest available QPU
+                best_qpu = max(qpu_solvers, key=lambda s: s.properties.get('num_qubits', 0))
+                self.logger.info(f"Selected QPU: {best_qpu.name} ({best_qpu.properties.get('num_qubits', 0)} qubits)")
+                
+                # Initialize with embedding composite for automatic embedding
+                self._sampler = EmbeddingComposite(DWaveSampler(solver=best_qpu.name))
+                self.logger.info("Initialized D-Wave QPU sampler with automatic embedding")
                 
             elif self.solver_type.startswith("hybrid"):
-                # Hybrid classical-quantum solver
-                self._sampler = KerberosSampler()
-                self.logger.info(f"Initialized D-Wave hybrid sampler: {self.solver_type}")
-                
+                # Find best hybrid solver
+                hybrid_solvers = [s for s in available_solvers if 'hybrid' in s.name.lower()]
+                if not hybrid_solvers:
+                    # Fallback to Kerberos sampler
+                    self.logger.info("No cloud hybrid solvers found, using Kerberos")
+                    self._sampler = KerberosSampler()
+                else:
+                    # Use LeapHybridSampler for cloud hybrid access
+                    hybrid_solver = hybrid_solvers[0]
+                    self.logger.info(f"Selected hybrid solver: {hybrid_solver.name}")
+                    self._sampler = LeapHybridSampler()
+                    
+            elif self.solver_type == "advantage":
+                # Specific Advantage system selection
+                advantage_solvers = [s for s in available_solvers 
+                                   if 'advantage' in s.name.lower() and s.solver_type == 'qpu']
+                if advantage_solvers:
+                    advantage_solver = advantage_solvers[0]
+                    self.logger.info(f"Selected Advantage QPU: {advantage_solver.name}")
+                    self._sampler = EmbeddingComposite(DWaveSampler(solver=advantage_solver.name))
+                else:
+                    raise Exception("No Advantage QPU available")
+                    
+            elif self.solver_type == "auto":
+                # Auto-select best solver based on availability
+                recommended = dwave_config.get_recommended_solver() if dwave_config else None
+                if recommended:
+                    self.logger.info(f"Auto-selected solver: {recommended}")
+                    if any('hybrid' in s.name.lower() for s in available_solvers if s.name == recommended):
+                        self._sampler = LeapHybridSampler()
+                    else:
+                        self._sampler = EmbeddingComposite(DWaveSampler(solver=recommended))
+                else:
+                    # Fallback to hybrid if available, otherwise QPU
+                    hybrid_solvers = [s for s in available_solvers if 'hybrid' in s.name.lower()]
+                    if hybrid_solvers:
+                        self._sampler = LeapHybridSampler()
+                        self.logger.info("Auto-selected: hybrid solver")
+                    else:
+                        qpu_solvers = [s for s in available_solvers if s.solver_type == 'qpu']
+                        if qpu_solvers:
+                            best_qpu = max(qpu_solvers, key=lambda s: s.properties.get('num_qubits', 0))
+                            self._sampler = EmbeddingComposite(DWaveSampler(solver=best_qpu.name))
+                            self.logger.info(f"Auto-selected: QPU {best_qpu.name}")
+                        else:
+                            raise Exception("No suitable solvers available")
+                    
             else:
                 self.logger.error(f"Unknown solver type: {self.solver_type}")
                 self._sampler = None
                 
         except Exception as e:
             self.logger.error(f"Failed to initialize D-Wave sampler: {e}")
+            self.logger.warning("Falling back to classical solver")
             self._sampler = None
     
     async def solve(
@@ -192,28 +273,49 @@ class QuantumSolver:
             'seed': kwargs.get('seed', None)
         }
         
-        # Run hybrid solver in thread pool to avoid blocking
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(self._sampler.sample, bqm, **solve_params)
-            sampleset = await asyncio.wrap_future(future)
+        # Add problem-specific parameters for hybrid solver
+        if hasattr(self._sampler, 'properties'):
+            max_vars = self._sampler.properties.get('maximum_number_of_variables', 10000)
+            if len(bqm.variables) > max_vars:
+                self.logger.warning(f"Problem size {len(bqm.variables)} exceeds hybrid solver limit {max_vars}")
         
-        # Extract best solution
-        best_sample = sampleset.first
-        
-        return QuantumSolution(
-            sample=dict(best_sample.sample),
-            energy=best_sample.energy,
-            num_occurrences=best_sample.num_occurrences,
-            chain_break_fraction=0.0,  # Hybrid solver handles embedding internally
-            timing={
-                'qpu_access_time': sampleset.info.get('qpu_access_time', 0.0),
-                'run_time': sampleset.info.get('run_time', 0.0)
-            },
-            embedding_stats={
-                'solver_type': 'hybrid',
-                'problem_size': len(bqm.variables)
-            }
-        )
+        try:
+            # Run hybrid solver in thread pool to avoid blocking
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(self._sampler.sample, bqm, **solve_params)
+                sampleset = await asyncio.wrap_future(future)
+            
+            # Extract best solution
+            best_sample = sampleset.first
+            
+            # Get timing information from hybrid solver
+            timing_info = sampleset.info.get('timing', {})
+            run_time = sampleset.info.get('run_time', 0.0)
+            
+            return QuantumSolution(
+                sample=dict(best_sample.sample),
+                energy=best_sample.energy,
+                num_occurrences=best_sample.num_occurrences,
+                chain_break_fraction=0.0,  # Hybrid solver handles embedding internally
+                timing={
+                    'qpu_access_time': timing_info.get('qpu_access_time', 0.0),
+                    'qpu_programming_time': timing_info.get('qpu_programming_time', 0.0),
+                    'qpu_delay_time': timing_info.get('qpu_delay_time', 0.0),
+                    'total_real_time': timing_info.get('total_real_time', run_time),
+                    'run_time': run_time
+                },
+                embedding_stats={
+                    'solver_type': 'hybrid',
+                    'problem_size': len(bqm.variables),
+                    'solver_info': sampleset.info.get('problem_type', 'unknown'),
+                    'quantum_fraction': self._estimate_quantum_fraction(sampleset.info)
+                }
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Hybrid solver failed: {e}")
+            # Fallback to classical if hybrid fails
+            raise
     
     async def _solve_qpu(
         self,
@@ -297,6 +399,22 @@ class QuantumSolver:
         except Exception as e:
             self.logger.warning(f"Could not calculate chain breaks: {e}")
             return 0.0
+    
+    def _estimate_quantum_fraction(self, solver_info: Dict[str, Any]) -> float:
+        """Estimate fraction of problem solved using quantum resources."""
+        if not solver_info:
+            return 0.0
+        
+        # For hybrid solvers, try to estimate quantum usage
+        qpu_time = solver_info.get('timing', {}).get('qpu_access_time', 0.0)
+        total_time = solver_info.get('run_time', 1.0)
+        
+        if total_time > 0:
+            # Rough estimate based on QPU access time
+            quantum_fraction = min(qpu_time / total_time, 1.0) if qpu_time > 0 else 0.0
+            return quantum_fraction
+        
+        return 0.0
     
     async def _classical_fallback(self, Q: Dict[Tuple[int, int], float]) -> QuantumSolution:
         """Classical fallback solver when quantum is unavailable."""
