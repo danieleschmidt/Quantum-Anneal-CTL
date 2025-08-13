@@ -1,0 +1,390 @@
+{
+  "export_timestamp": "2025-08-13T03:24:49.605796",
+  "enabled_regulations": [
+    "iso27001",
+    "gdpr",
+    "pdpa",
+    "energy_star",
+    "ccpa"
+  ],
+  "data_processing_records": [
+    {
+      "timestamp": 1755055489.5974374,
+      "data_type": "temperature_data",
+      "purpose": "hvac_optimization",
+      "legal_basis": "legitimate_interest",
+      "retention_period": 30,
+      "user_id": null,
+      "building_id": "european_headquarters",
+      "processing_location": "local"
+    },
+    {
+      "timestamp": 1755055489.5974612,
+      "data_type": "energy_consumption",
+      "purpose": "efficiency_monitoring",
+      "legal_basis": "contractual",
+      "retention_period": 365,
+      "user_id": null,
+      "building_id": "european_headquarters",
+      "processing_location": "local"
+    },
+    {
+      "timestamp": 1755055489.6009529,
+      "data_type": "temperature_data",
+      "purpose": "hvac_optimization",
+      "legal_basis": "legitimate_interest",
+      "retention_period": 30,
+      "user_id": null,
+      "building_id": "american_branch",
+      "processing_location": "local"
+    },
+    {
+      "timestamp": 1755055489.6009715,
+      "data_type": "energy_consumption",
+      "purpose": "efficiency_monitoring",
+      "legal_basis": "contractual",
+      "retention_period": 365,
+      "user_id": null,
+      "building_id": "american_branch",
+      "processing_location": "local"
+    },
+    {
+      "timestamp": 1755055489.6035867,
+      "data_type": "temperature_data",
+      "purpose": "hvac_optimization",
+      "legal_basis": "legitimate_interest",
+      "retention_period": 30,
+      "user_id": null,
+      "building_id": "asian_operations",
+      "processing_location": "local"
+    },
+    {
+      "timestamp": 1755055489.6036062,
+      "data_type": "energy_consumption",
+      "purpose": "efficiency_monitoring",
+      "legal_basis": "contractual",
+      "retention_period": 365,
+      "user_id": null,
+      "building_id": "asian_operations",
+      "processing_location": "local"
+    }
+  ],
+  "audit_log": [
+    {
+      "timestamp": 1755055489.5955825,
+      "event_type": "compliance_enabled",
+      "user_id": null,
+      "building_id": null,
+      "action": "enabled_gdpr_compliance",
+      "details": {
+        "regulation": "gdpr"
+      },
+      "ip_address": null,
+      "compliance_flags": []
+    },
+    {
+      "timestamp": 1755055489.5956001,
+      "event_type": "compliance_enabled",
+      "user_id": null,
+      "building_id": null,
+      "action": "enabled_iso27001_compliance",
+      "details": {
+        "regulation": "iso27001"
+      },
+      "ip_address": null,
+      "compliance_flags": []
+    },
+    {
+      "timestamp": 1755055489.5956094,
+      "event_type": "compliance_enabled",
+      "user_id": null,
+      "building_id": null,
+      "action": "enabled_energy_star_compliance",
+      "details": {
+        "regulation": "energy_star"
+      },
+      "ip_address": null,
+      "compliance_flags": []
+    },
+    {
+      "timestamp": 1755055489.5956166,
+      "event_type": "compliance_enabled",
+      "user_id": null,
+      "building_id": null,
+      "action": "enabled_gdpr_compliance",
+      "details": {
+        "regulation": "gdpr"
+      },
+      "ip_address": null,
+      "compliance_flags": []
+    },
+    {
+      "timestamp": 1755055489.5956237,
+      "event_type": "compliance_enabled",
+      "user_id": null,
+      "building_id": null,
+      "action": "enabled_ccpa_compliance",
+      "details": {
+        "regulation": "ccpa"
+      },
+      "ip_address": null,
+      "compliance_flags": []
+    },
+    {
+      "timestamp": 1755055489.5956328,
+      "event_type": "compliance_enabled",
+      "user_id": null,
+      "building_id": null,
+      "action": "enabled_pdpa_compliance",
+      "details": {
+        "regulation": "pdpa"
+      },
+      "ip_address": null,
+      "compliance_flags": []
+    },
+    {
+      "timestamp": 1755055489.5956404,
+      "event_type": "compliance_enabled",
+      "user_id": null,
+      "building_id": null,
+      "action": "enabled_energy_star_compliance",
+      "details": {
+        "regulation": "energy_star"
+      },
+      "ip_address": null,
+      "compliance_flags": []
+    },
+    {
+      "timestamp": 1755055489.5956478,
+      "event_type": "compliance_enabled",
+      "user_id": null,
+      "building_id": null,
+      "action": "enabled_iso27001_compliance",
+      "details": {
+        "regulation": "iso27001"
+      },
+      "ip_address": null,
+      "compliance_flags": []
+    },
+    {
+      "timestamp": 1755055489.5967045,
+      "event_type": "consent_update",
+      "user_id": "facility_manager_eu_office",
+      "building_id": "european_headquarters",
+      "action": "record_user_consent",
+      "details": {
+        "purpose": "hvac_optimization",
+        "granted": true,
+        "consent_checksum": "183879442c77cc85914468ac1a2b20b8296038ce6afaa7209d07a28bb754fdc9"
+      },
+      "ip_address": null,
+      "compliance_flags": [
+        "gdpr"
+      ]
+    },
+    {
+      "timestamp": 1755055489.597457,
+      "event_type": "data_processing",
+      "user_id": null,
+      "building_id": "european_headquarters",
+      "action": "process_personal_data",
+      "details": {
+        "data_type": "temperature_data",
+        "purpose": "hvac_optimization",
+        "legal_basis": "legitimate_interest",
+        "retention_days": 30
+      },
+      "ip_address": null,
+      "compliance_flags": [
+        "gdpr"
+      ]
+    },
+    {
+      "timestamp": 1755055489.5974698,
+      "event_type": "data_processing",
+      "user_id": null,
+      "building_id": "european_headquarters",
+      "action": "process_personal_data",
+      "details": {
+        "data_type": "energy_consumption",
+        "purpose": "efficiency_monitoring",
+        "legal_basis": "contractual",
+        "retention_days": 365
+      },
+      "ip_address": null,
+      "compliance_flags": [
+        "gdpr"
+      ]
+    },
+    {
+      "timestamp": 1755055489.600643,
+      "event_type": "consent_update",
+      "user_id": "facility_manager_us_office",
+      "building_id": "american_branch",
+      "action": "record_user_consent",
+      "details": {
+        "purpose": "hvac_optimization",
+        "granted": true,
+        "consent_checksum": "c1dda081540af6963760f1daf6f303d563d159b7d3a45a2c733dd9765d20eab4"
+      },
+      "ip_address": null,
+      "compliance_flags": [
+        "gdpr"
+      ]
+    },
+    {
+      "timestamp": 1755055489.6009674,
+      "event_type": "data_processing",
+      "user_id": null,
+      "building_id": "american_branch",
+      "action": "process_personal_data",
+      "details": {
+        "data_type": "temperature_data",
+        "purpose": "hvac_optimization",
+        "legal_basis": "legitimate_interest",
+        "retention_days": 30
+      },
+      "ip_address": null,
+      "compliance_flags": [
+        "gdpr"
+      ]
+    },
+    {
+      "timestamp": 1755055489.6009789,
+      "event_type": "data_processing",
+      "user_id": null,
+      "building_id": "american_branch",
+      "action": "process_personal_data",
+      "details": {
+        "data_type": "energy_consumption",
+        "purpose": "efficiency_monitoring",
+        "legal_basis": "contractual",
+        "retention_days": 365
+      },
+      "ip_address": null,
+      "compliance_flags": [
+        "gdpr"
+      ]
+    },
+    {
+      "timestamp": 1755055489.6033201,
+      "event_type": "consent_update",
+      "user_id": "facility_manager_asia_office",
+      "building_id": "asian_operations",
+      "action": "record_user_consent",
+      "details": {
+        "purpose": "hvac_optimization",
+        "granted": true,
+        "consent_checksum": "f7e4b62c19fce150b1b7598af7ce9a3abe98358def2a5674b5ba5a25d731f675"
+      },
+      "ip_address": null,
+      "compliance_flags": [
+        "gdpr"
+      ]
+    },
+    {
+      "timestamp": 1755055489.603603,
+      "event_type": "data_processing",
+      "user_id": null,
+      "building_id": "asian_operations",
+      "action": "process_personal_data",
+      "details": {
+        "data_type": "temperature_data",
+        "purpose": "hvac_optimization",
+        "legal_basis": "legitimate_interest",
+        "retention_days": 30
+      },
+      "ip_address": null,
+      "compliance_flags": [
+        "gdpr"
+      ]
+    },
+    {
+      "timestamp": 1755055489.6036134,
+      "event_type": "data_processing",
+      "user_id": null,
+      "building_id": "asian_operations",
+      "action": "process_personal_data",
+      "details": {
+        "data_type": "energy_consumption",
+        "purpose": "efficiency_monitoring",
+        "legal_basis": "contractual",
+        "retention_days": 365
+      },
+      "ip_address": null,
+      "compliance_flags": [
+        "gdpr"
+      ]
+    }
+  ],
+  "consent_records": {
+    "facility_manager_eu_office": {
+      "hvac_optimization": {
+        "granted": true,
+        "timestamp": 1755055489.5966547,
+        "consent_text": "I consent to HVAC optimization data processing for european_headquarters",
+        "building_id": "european_headquarters",
+        "checksum": "183879442c77cc85914468ac1a2b20b8296038ce6afaa7209d07a28bb754fdc9"
+      }
+    },
+    "facility_manager_us_office": {
+      "hvac_optimization": {
+        "granted": true,
+        "timestamp": 1755055489.600608,
+        "consent_text": "I consent to HVAC optimization data processing for american_branch",
+        "building_id": "american_branch",
+        "checksum": "c1dda081540af6963760f1daf6f303d563d159b7d3a45a2c733dd9765d20eab4"
+      }
+    },
+    "facility_manager_asia_office": {
+      "hvac_optimization": {
+        "granted": true,
+        "timestamp": 1755055489.6032898,
+        "consent_text": "I consent to HVAC optimization data processing for asian_operations",
+        "building_id": "asian_operations",
+        "checksum": "f7e4b62c19fce150b1b7598af7ce9a3abe98358def2a5674b5ba5a25d731f675"
+      }
+    }
+  },
+  "data_retention_policies": {
+    "occupancy_data": 90,
+    "energy_consumption": 365,
+    "temperature_data": 30,
+    "optimization_results": 180,
+    "user_preferences": 730,
+    "audit_logs": 2555,
+    "error_logs": 90,
+    "performance_metrics": 365
+  },
+  "compliance_status": {
+    "enabled_regulations": [
+      "iso27001",
+      "gdpr",
+      "pdpa",
+      "energy_star",
+      "ccpa"
+    ],
+    "data_processing_records": 6,
+    "audit_log_entries": 17,
+    "consent_records": 3,
+    "data_retention_policies": {
+      "occupancy_data": 90,
+      "energy_consumption": 365,
+      "temperature_data": 30,
+      "optimization_results": 180,
+      "user_preferences": 730,
+      "audit_logs": 2555,
+      "error_logs": 90,
+      "performance_metrics": 365
+    },
+    "data_age_statistics": {
+      "average_age_days": 6.193456090526817e-08,
+      "oldest_record_days": 9.934107462565105e-08
+    },
+    "compliance_summary": {
+      "gdpr_enabled": true,
+      "security_standards": true,
+      "energy_compliance": true
+    }
+  }
+}

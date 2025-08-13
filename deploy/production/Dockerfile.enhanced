@@ -1,0 +1,85 @@
+# Multi-stage production Dockerfile for Quantum HVAC Controller
+FROM python:3.11-slim as builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first for better layer caching
+COPY requirements.txt pyproject.toml ./
+
+# Create virtual environment and install dependencies
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Upgrade pip and install dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
+COPY quantum_ctl/ ./quantum_ctl/
+COPY examples/ ./examples/
+COPY tests/ ./tests/
+
+# Install the package
+RUN pip install -e .
+
+# Production stage
+FROM python:3.11-slim as production
+
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r quantum \
+    && useradd -r -g quantum quantum
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Set working directory
+WORKDIR /app
+
+# Copy application files
+COPY --from=builder /app/quantum_ctl ./quantum_ctl
+COPY --from=builder /app/examples ./examples
+COPY --chown=quantum:quantum deploy/production/config/ ./config/
+COPY --chown=quantum:quantum deploy/production/scripts/ ./scripts/
+
+# Create necessary directories
+RUN mkdir -p /app/logs /app/cache /app/data && \
+    chown -R quantum:quantum /app
+
+# Copy entrypoint script
+COPY deploy/production/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Environment variables
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    QUANTUM_ENV=production \
+    LOG_LEVEL=INFO
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8001/health || exit 1
+
+# Expose ports
+EXPOSE 8000 8001 8002
+
+# Switch to non-root user
+USER quantum
+
+# Entry point
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["python", "-m", "quantum_ctl.api.app"]

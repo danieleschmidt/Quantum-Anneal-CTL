@@ -1,0 +1,18 @@
+{
+  "current_metrics": {
+    "timestamp": 1755055008.433492,
+    "system_status": "healthy",
+    "optimization_success_rate": 1.0,
+    "avg_optimization_time": 0.0012281170000392194,
+    "memory_usage_mb": 390.9765625,
+    "cpu_usage_percent": 0.0,
+    "quantum_solver_status": "not_configured",
+    "error_count_last_hour": 0,
+    "last_error": null
+  },
+  "trends": {},
+  "total_optimizations": 1,
+  "monitoring_duration": 0,
+  "data_points": 0,
+  "export_timestamp": "2025-08-13T03:16:48.433532"
+}

@@ -1,0 +1,18 @@
+{
+  "current_metrics": {
+    "timestamp": 1755055186.5141144,
+    "system_status": "degraded",
+    "optimization_success_rate": 0.25,
+    "avg_optimization_time": 0.0001886288324991862,
+    "memory_usage_mb": 406.3984375,
+    "cpu_usage_percent": 0.0,
+    "quantum_solver_status": "not_configured",
+    "error_count_last_hour": 9,
+    "last_error": "Objective weights must sum to 1.0, got 1.2249999999999999"
+  },
+  "trends": {},
+  "total_optimizations": 12,
+  "monitoring_duration": 0,
+  "data_points": 0,
+  "export_timestamp": "2025-08-13T03:19:46.514138"
+}
