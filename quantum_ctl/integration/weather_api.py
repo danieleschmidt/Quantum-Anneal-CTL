@@ -13,9 +13,27 @@ from datetime import datetime, timedelta
 from enum import Enum
 import json
 
-import aiohttp
-import numpy as np
-from pydantic import BaseModel, Field
+try:
+    import aiohttp
+    AIOHTTP_AVAILABLE = True
+except ImportError:
+    AIOHTTP_AVAILABLE = False
+    aiohttp = None
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
+
+try:
+    from pydantic import BaseModel, Field
+    PYDANTIC_AVAILABLE = True
+except ImportError:
+    PYDANTIC_AVAILABLE = False
+    BaseModel = object
+    Field = lambda **kwargs: None
 
 
 class WeatherSource(Enum):
