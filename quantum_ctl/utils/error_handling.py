@@ -31,6 +31,18 @@ class ErrorCategory(Enum):
     UNKNOWN = "unknown"
 
 
+class ErrorRecoveryStrategy(Enum):
+    """Error recovery strategies."""
+    RETRY_QUANTUM = "retry_quantum"
+    FALLBACK_CLASSICAL = "fallback_classical"
+    REDUCE_PROBLEM_SIZE = "reduce_problem_size"
+    USE_CACHED_SOLUTION = "use_cached_solution"
+    DECOMPOSE_PROBLEM = "decompose_problem"
+    SAFE_DEFAULT = "safe_default"
+    HYBRID_MODE = "hybrid_mode"
+    SKIP_ITERATION = "skip_iteration"
+
+
 class QuantumControlError(Exception):
     """Base exception for quantum control system."""
     

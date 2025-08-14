@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from ..models.building import Building, BuildingState
 from ..optimization.mpc_to_qubo import MPCToQUBO
 from ..optimization.quantum_solver import QuantumSolver
+from ..optimization.adaptive_quantum_engine import AdaptiveQuantumEngine, OptimizationStrategy
 from ..utils.validation import validate_state, validate_forecast
 from ..utils.error_handling import (
     ErrorHandler, async_error_handler, QuantumControlError, 
@@ -76,12 +77,21 @@ class HVACController:
             horizon=self._get_control_steps()
         )
         
-        self.quantum_solver = QuantumSolver(
-            solver_type=self.config.solver,
-            num_reads=self.config.num_reads,
-            annealing_time=self.config.annealing_time,
-            chain_strength=self.config.chain_strength
-        )
+        # Initialize adaptive quantum engine if requested, otherwise use basic solver
+        if self.config.solver == "adaptive":
+            self.quantum_solver = AdaptiveQuantumEngine(
+                optimization_strategy=OptimizationStrategy.ADAPTIVE_HYBRID,
+                performance_target=0.85
+            )
+            self._using_adaptive_engine = True
+        else:
+            self.quantum_solver = QuantumSolver(
+                solver_type=self.config.solver,
+                num_reads=self.config.num_reads,
+                annealing_time=self.config.annealing_time,
+                chain_strength=self.config.chain_strength
+            )
+            self._using_adaptive_engine = False
         
         # Control history for warm starts
         self._control_history: List[np.ndarray] = []
@@ -156,9 +166,12 @@ class HVACController:
                 penalty_weights=self._get_penalty_weights()
             )
             
-            # Solve with quantum annealing
+            # Solve with quantum annealing (adaptive or basic)
             self.logger.debug("Solving with quantum annealing")
-            solution = await self.quantum_solver.solve(Q_matrix)
+            if self._using_adaptive_engine:
+                solution = await self.quantum_solver.solve_adaptive(Q_matrix)
+            else:
+                solution = await self.quantum_solver.solve(Q_matrix)
             
             # Decode solution to control commands
             control_schedule = self.mpc_formulator.decode_solution(
@@ -295,9 +308,12 @@ class HVACController:
             penalty_weights=self._get_penalty_weights()
         )
         
-        # Solve with quantum annealing
+        # Solve with quantum annealing (adaptive or basic)
         self.logger.debug("Solving with quantum annealing")
-        solution = await self.quantum_solver.solve(Q_matrix)
+        if self._using_adaptive_engine:
+            solution = await self.quantum_solver.solve_adaptive(Q_matrix)
+        else:
+            solution = await self.quantum_solver.solve(Q_matrix)
         
         # Decode solution to control commands
         control_schedule = self.mpc_formulator.decode_solution(

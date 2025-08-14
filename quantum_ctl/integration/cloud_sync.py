@@ -3,13 +3,19 @@ Cloud synchronization for distributed quantum HVAC control.
 """
 
 import asyncio
-import aiohttp
 import json
 import logging
 import time
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, asdict
 import hashlib
+
+try:
+    import aiohttp
+    AIOHTTP_AVAILABLE = True
+except ImportError:
+    AIOHTTP_AVAILABLE = False
+    aiohttp = None
 
 from ..models.building import BuildingState
 from ..utils.performance import get_resource_manager

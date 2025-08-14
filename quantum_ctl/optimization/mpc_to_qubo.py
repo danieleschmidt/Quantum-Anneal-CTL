@@ -9,7 +9,12 @@ from typing import Dict, Any, Tuple, List, Optional, Callable
 import numpy as np
 from dataclasses import dataclass
 import logging
-from scipy.sparse import csr_matrix
+try:
+    from scipy.sparse import csr_matrix
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    csr_matrix = None
 # import networkx as nx  # Not needed for basic functionality
 
 from ..models.building import BuildingState

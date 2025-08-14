@@ -219,3 +219,74 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
         'issues': issues,
         'warnings': warnings
     }
+
+
+class QuantumConfig:
+    """Quantum HVAC Control System Configuration Manager."""
+    
+    def __init__(self, config_path: Union[str, Path] = None):
+        """Initialize configuration manager."""
+        self.config_path = config_path
+        self._config = get_default_config()
+        
+        if config_path:
+            self.load_config(config_path)
+    
+    def load_config(self, config_path: Union[str, Path] = None) -> None:
+        """Load configuration from file."""
+        if config_path:
+            self.config_path = config_path
+        
+        if self.config_path:
+            try:
+                loaded_config = load_config(self.config_path)
+                self._config = merge_configs(self._config, loaded_config)
+                logger.info(f"Configuration loaded from {self.config_path}")
+            except Exception as e:
+                logger.warning(f"Failed to load config from {self.config_path}: {e}")
+    
+    def save_config(self, config_path: Union[str, Path] = None) -> None:
+        """Save current configuration to file."""
+        path = config_path or self.config_path
+        if path:
+            save_config(self._config, path)
+    
+    def get(self, key: str = None, default: Any = None) -> Any:
+        """Get configuration value by key."""
+        if key is None:
+            return self._config
+        
+        # Support nested keys like 'quantum.solver_type'
+        keys = key.split('.')
+        value = self._config
+        
+        for k in keys:
+            if isinstance(value, dict) and k in value:
+                value = value[k]
+            else:
+                return default
+        
+        return value
+    
+    def set(self, key: str, value: Any) -> None:
+        """Set configuration value by key."""
+        keys = key.split('.')
+        config = self._config
+        
+        # Navigate to parent dict
+        for k in keys[:-1]:
+            if k not in config:
+                config[k] = {}
+            config = config[k]
+        
+        # Set final value
+        config[keys[-1]] = value
+    
+    def validate(self) -> Dict[str, Any]:
+        """Validate current configuration."""
+        return validate_config(self._config)
+    
+    @property 
+    def config(self) -> Dict[str, Any]:
+        """Get full configuration dictionary."""
+        return self._config.copy()
