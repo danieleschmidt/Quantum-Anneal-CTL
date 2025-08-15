@@ -1,0 +1,84 @@
+# Multi-stage build for Pipeline Guard
+FROM python:3.11-slim as builder
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    make \
+    pkg-config \
+    libhdf5-dev \
+    libssl-dev \
+    libffi-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements
+COPY requirements.txt pyproject.toml ./
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Production stage
+FROM python:3.11-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    redis-tools \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user
+RUN groupadd -r pipeline-guard && \
+    useradd -r -g pipeline-guard -d /app -s /bin/bash pipeline-guard
+
+# Create directories
+RUN mkdir -p /app /var/log/pipeline-guard /var/lib/pipeline-guard && \
+    chown -R pipeline-guard:pipeline-guard /app /var/log/pipeline-guard /var/lib/pipeline-guard
+
+# Copy Python packages from builder
+COPY --from=builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
+
+# Set working directory
+WORKDIR /app
+
+# Copy application code
+COPY --chown=pipeline-guard:pipeline-guard . .
+
+# Install the package
+RUN pip install -e .
+
+# Create configuration directory
+RUN mkdir -p /etc/pipeline-guard && \
+    chown pipeline-guard:pipeline-guard /etc/pipeline-guard
+
+# Copy default configuration
+COPY --chown=pipeline-guard:pipeline-guard config/pipeline-guard.yaml /etc/pipeline-guard/config.yaml
+
+# Copy entrypoint script
+COPY --chown=pipeline-guard:pipeline-guard scripts/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Switch to app user
+USER pipeline-guard
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Expose ports
+EXPOSE 8765 8080 9090
+
+# Set environment variables
+ENV PYTHONPATH=/app
+ENV PIPELINE_GUARD_CONFIG=/etc/pipeline-guard/config.yaml
+
+# Entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["python", "-m", "quantum_ctl.pipeline_guard.service"]
