@@ -187,8 +187,8 @@ def test_metrics_collector():
         collector.record_metric(
             name="test_metric",
             value=42.5,
-            component="test_component",
-            metadata={"unit": "seconds"}
+            labels={"component": "test_component"},
+            unit="seconds"
         )
         
         assert "test_metric" in collector.metrics
