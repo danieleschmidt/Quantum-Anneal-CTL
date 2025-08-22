@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 from ..models.building import Building, BuildingState
 from ..optimization.mpc_to_qubo import MPCToQUBO
 from ..optimization.quantum_solver import QuantumSolver
+from ..optimization.classical_fallback_solver import ClassicalFallbackSolver
+from ..utils.graceful_fallback import get_solver_type, DWAVE_AVAILABLE
 from ..optimization.adaptive_quantum_engine import AdaptiveQuantumEngine, OptimizationStrategy
 from ..utils.validation import validate_state, validate_forecast
 from ..utils.error_handling import (
@@ -19,6 +21,8 @@ from ..utils.error_handling import (
     OptimizationError, ErrorCategory, ErrorSeverity
 )
 from ..utils.monitoring import HealthMonitor, CircuitBreaker, RetryManager
+from ..utils.enhanced_monitoring import get_health_monitor
+from ..utils.comprehensive_validation import validate_system, ValidationLevel
 from ..utils.safety import SafetyMonitor, SafetyLimits
 from ..utils.performance import (
     get_resource_manager, performance_monitor, cached_matrix_operation
