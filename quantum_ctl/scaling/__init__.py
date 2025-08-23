@@ -12,19 +12,15 @@ This module provides comprehensive scaling capabilities including:
 from .auto_scaler import QuantumAutoScaler, ScalingPolicy, ResourceMetrics
 from .performance_optimizer import PerformanceOptimizer, OptimizationStrategy
 from .distributed_quantum_coordinator import DistributedQuantumCoordinator, get_quantum_coordinator
-from .concurrent_pipeline import ConcurrentPipeline, PipelineStage
-from .resource_manager import ResourceManager, ResourceAllocation
+from .global_quantum_orchestrator import GlobalQuantumOrchestrator
 
 __all__ = [
     "QuantumAutoScaler",
-    "ScalingPolicy",
+    "ScalingPolicy", 
     "ResourceMetrics",
-    "PerformanceOptimizer", 
+    "PerformanceOptimizer",
     "OptimizationStrategy",
-    "DistributedCoordinator",
-    "CoordinationStrategy",
-    "ConcurrentPipeline",
-    "PipelineStage",
-    "ResourceManager",
-    "ResourceAllocation"
+    "DistributedQuantumCoordinator",
+    "get_quantum_coordinator",
+    "GlobalQuantumOrchestrator"
 ]
