@@ -10,21 +10,31 @@ annealing-based HVAC control, including:
 - Safety-critical system monitoring
 """
 
-from .quantum_security import QuantumSecurityManager, SecureQuantumSolver
-from .input_validation import InputValidator, ValidationRules
-from .attack_detection import AttackDetector, AnomalyDetector
-from .secure_communication import SecureChannelManager, EncryptedDataTransfer
-from .safety_monitor import SafetyCriticalMonitor, EmergencyResponseManager
+from .production_security import (
+    ProductionSecuritySystem,
+    EncryptionManager,
+    AuthenticationManager,
+    AuthorizationManager,
+    ThreatDetector,
+    SecurityAuditLogger,
+    SecurityException
+)
+
+try:
+    from .quantum_security import QuantumSecurityManager, SecureQuantumSolver
+except ImportError:
+    # Fallback if quantum security module not available
+    QuantumSecurityManager = None
+    SecureQuantumSolver = None
 
 __all__ = [
+    "ProductionSecuritySystem",
+    "EncryptionManager",
+    "AuthenticationManager",
+    "AuthorizationManager",
+    "ThreatDetector",
+    "SecurityAuditLogger",
+    "SecurityException",
     "QuantumSecurityManager",
-    "SecureQuantumSolver", 
-    "InputValidator",
-    "ValidationRules",
-    "AttackDetector",
-    "AnomalyDetector",
-    "SecureChannelManager",
-    "EncryptedDataTransfer",
-    "SafetyCriticalMonitor",
-    "EmergencyResponseManager"
+    "SecureQuantumSolver"
 ]
