@@ -1,0 +1,71 @@
+{
+  "overall_passed": false,
+  "overall_score": 60.0,
+  "execution_time": 1.7817142009735107,
+  "timestamp": "2025-08-26T04:04:03.749788",
+  "gates": [
+    {
+      "gate_name": "test_coverage",
+      "passed": false,
+      "score": 0.0,
+      "metrics": {
+        "coverage": 0.0
+      },
+      "messages": [
+        "Test coverage: 0.0%"
+      ]
+    },
+    {
+      "gate_name": "code_quality",
+      "passed": true,
+      "score": 100,
+      "metrics": {
+        "violations": 0
+      },
+      "messages": [
+        "Style violations: 0"
+      ]
+    },
+    {
+      "gate_name": "security",
+      "passed": true,
+      "score": 100,
+      "metrics": {
+        "issues": 0
+      },
+      "messages": [
+        "No security issues found"
+      ]
+    },
+    {
+      "gate_name": "performance",
+      "passed": false,
+      "score": 0.0,
+      "metrics": {
+        "error": "No module named 'psutil'"
+      },
+      "messages": [
+        "Performance test failed: No module named 'psutil'"
+      ]
+    },
+    {
+      "gate_name": "documentation",
+      "passed": true,
+      "score": 100.0,
+      "metrics": {
+        "doc_coverage": 94.2602671944582,
+        "total_functions": 2021,
+        "documented_functions": 1905,
+        "project_docs_exist": true
+      },
+      "messages": [
+        "Documentation coverage: 94.3%"
+      ]
+    }
+  ],
+  "summary": {
+    "total_gates": 5,
+    "passed_gates": 3,
+    "failed_gates": 2
+  }
+}
