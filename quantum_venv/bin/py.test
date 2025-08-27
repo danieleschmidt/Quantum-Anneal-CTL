@@ -1,4 +1,4 @@
-#!/root/repo/quantum_venv/bin/python
+#!/root/repo/quantum_venv/bin/python3
 import sys
 from pytest import console_main
 if __name__ == '__main__':
