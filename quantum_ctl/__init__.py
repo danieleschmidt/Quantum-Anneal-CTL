@@ -1,28 +1,14 @@
 """
-Quantum-Anneal-CTL: Quantum annealing controller for HVAC micro-grids.
+Quantum Anneal CTL — Quantum annealing-based HVAC control for building microgrids.
 
-A framework for solving complex HVAC optimization problems using quantum annealing,
-leveraging D-Wave quantum computers for real-time energy optimization in smart buildings.
+This package implements a QUBO (Quadratic Unconstrained Binary Optimization)
+formulation for HVAC control, solved via simulated annealing as a quantum-
+annealing proxy.
 """
 
+from quantum_ctl.hvac_model import HVACMicroGrid
+from quantum_ctl.mpc_controller import MPCController
+from quantum_ctl.optimizer import SimulatedAnnealingOptimizer
+
+__all__ = ["HVACMicroGrid", "MPCController", "SimulatedAnnealingOptimizer"]
 __version__ = "0.1.0"
-__author__ = "Daniel Schmidt"
-__email__ = "daniel@terragonlabs.com"
-
-from .core.controller import HVACController
-from .core.microgrid import MicroGridController
-from .core.control_loop import RealTimeControlLoop
-from .models.building import Building
-from .optimization.mpc_to_qubo import MPCToQUBO
-from .integration.bms_connector import BMSConnector
-from .integration.weather_api import WeatherPredictor
-
-__all__ = [
-    "HVACController",
-    "MicroGridController",
-    "RealTimeControlLoop", 
-    "Building",
-    "MPCToQUBO",
-    "BMSConnector",
-    "WeatherPredictor",
-]
